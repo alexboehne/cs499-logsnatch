@@ -5,12 +5,17 @@
   security posture, such as permitting root logons over SSH. The application will present these security violations to the user via the GUI dashboard.
 
 ## Build Steps
+Run SQL script in db_struct and start the DB on port 3306
+In frontend, run:
 
-1. Run SQL script in db_struct and start the DB on port 3306
-2. In frontend, run:
-  1. `npm install craco`
-  2. `npm run build`
-  3. `npm run start`
-3. In backend, run:
-  1. `npm install cors express mysql2 crypto`
-  2. `node server.js`
+`npm install craco`
+
+`npm run build`
+
+`npm run start`
+
+In backend, run:
+
+`npm install cors express mysql2 crypto`
+
+`node server.js`
