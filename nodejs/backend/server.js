@@ -6,7 +6,7 @@ const crypto = require('crypto'); // Built-in Node module for MD5
 const app = express();
 
 // Middleware
-app.use(cors()); // Allows frontend to request data from backend
+app.use(cors()); 
 app.use(express.json());
 
 // MySQL Database Connection
@@ -40,10 +40,29 @@ app.post('/api/login', (req, res) => {
         }
 
         if (results.length > 0) {
-            // The database returns { uid: X, username: '...' }
             res.json({ success: true, message: 'Login successful', user: results[0] });
         } else {
             res.status(401).json({ success: false, message: 'Invalid credentials' });
+        }
+    });
+});
+
+app.post('/api/createUser', (req, res) => {
+    const { username, password } = req.body;
+    const hashedPass = crypto.createHash('md5').update(password).digest('hex');
+
+    const sql = 'INSERT INTO user_creds (username, md5_pass) VALUES (?, ?)';
+    
+    db.query(sql, [username, hashedPass], (err, results) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).json({ success: false, error: 'Server error' });
+        }
+
+        if (results.length > 0) {
+            res.json({ success: true, message: 'User added', userID: results.insertId, username: username });
+        } else {
+            res.status(401).json({ success: false, message: 'Failed to add user' });
         }
     });
 });
@@ -84,7 +103,7 @@ app.post('/api/items', (req, res) => {
             return res.status(500).json({ error: 'Database insertion failed' });
         }
         
-        // 4. Send back the item
+        // Send back item
         res.status(201).json({ 
             id: result.insertId, 
             name: name, 
