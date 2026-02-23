@@ -14,7 +14,7 @@ const db = mysql.createConnection({
     host: 'localhost',
     user: 'root',       
     password: 'DONTBREAKIn25!', 
-    database: 'LogSnatch',
+    database: 'logsnatch',
     port: 3306          
 });
 
@@ -40,7 +40,9 @@ app.post('/api/login', (req, res) => {
         }
 
         if (results.length > 0) {
-            res.json({ success: true, message: 'Login successful', user: results[0] });
+            //added by claude:
+            const token = crypto.randomBytes(32).toString('hex') //checks for token
+            res.json({ success: true, message: 'Login successful', user: results[0], token: token});
         } else {
             res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
@@ -59,22 +61,10 @@ app.post('/api/createUser', (req, res) => {
             return res.status(500).json({ success: false, error: 'Server error' });
         }
 
-        if (results.length > 0) {
+        if (results.affectedRows > 0) {
             res.json({ success: true, message: 'User added', userID: results.insertId, username: username });
         } else {
             res.status(401).json({ success: false, message: 'Failed to add user' });
-        }
-    });
-});
-
-// API Endpoint to fetch 
-app.get('/api/items', (req, res) => {
-    const sql = 'SELECT * FROM items';
-    db.query(sql, (err, results) => {
-        if (err) {
-            res.status(500).json({ error: 'Database query failed' });
-        } else {
-            res.json(results);
         }
     });
 });

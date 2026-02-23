@@ -1,7 +1,0 @@
-User-agent: Googlebot
-Disallow: /nogooglebot/
-
-User-agent: *
-Allow: /
-
-Sitemap: https://thunderous-willing-turkey-zq65az.teleporthq.app/sitemap.xml

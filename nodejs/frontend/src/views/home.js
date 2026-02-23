@@ -19,6 +19,9 @@ const handleLogin = (e) => {
       if (data.success) {
         console.log('Logged in User ID:', data.user.uid);
         alert(`Welcome back, ${data.user.username}!`);
+        //added by claude - connect the 2 react apps
+        localStorage.setItem('authToken', data.token)
+        window.location.href = 'http://localhost:3001/dashboard?token=' + data.token
       } else {
         alert(data.message);
       }
@@ -93,7 +96,7 @@ const handleUserCreation = (e) => {
           Login
         </button>
         
-        <button type="button" className="button">
+        <button type="button" className="button" onClick={handleUserCreation}>
           Create Account
         </button>
       </form>
