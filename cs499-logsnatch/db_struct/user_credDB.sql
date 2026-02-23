@@ -1,0 +1,16 @@
+CREATE DATABASE IF NOT EXISTS logsnatch;
+USE logsnatch;
+
+CREATE TABLE IF NOT EXISTS user_creds (
+    uid INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    md5_pass VARCHAR(32) NOT NULL, -- MD5 hashes are always 32 characters
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
