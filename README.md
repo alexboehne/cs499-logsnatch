@@ -5,17 +5,43 @@
   security posture, such as permitting root logons over SSH. The application will present these security violations to the user via the GUI dashboard.
 
 ## Build Steps
-Run SQL script in db_struct and start the DB on port 3306
-In frontend, run:
 
-`npm install craco`
+`sudo systemctl start mysql`
 
-`npm run build`
 
-`npm run start`
+`mysql -u root -p`
 
-In backend, run:
 
-`npm install cors express mysql2 crypto`
+`CREATE DATABASE IF NOT EXISTS logsnatch;`
+
+
+`exit;`
+
+`mysql -u root -p < db_struct/user_credDB.sql`
+
+### For this part, keep 3 terminal windows open
+#### First window:
+
+`cd nodejs/backend`
+
+`npm install`
 
 `node server.js`
+
+#### Second window:
+
+`cd nodejs/frontend`
+
+`npm install`
+
+`npm start`
+
+#### Third window:
+
+`cd logsnatch-dashboard`
+
+`npm install`
+
+`npm start`
+
+*Access the login page by going to localhost:3000*
