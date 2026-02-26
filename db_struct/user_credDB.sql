@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS user_creds (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE `auth_log` (
+CREATE TABLE IF NOT EXISTS `auth_log` (
   `iid` int NOT NULL AUTO_INCREMENT,
   `user` varchar(45) DEFAULT NULL,
   `logtime` datetime NOT NULL,
@@ -17,7 +17,7 @@ CREATE TABLE `auth_log` (
 
 
 -- FK references the logged in user by their uid
-CREATE TABLE `scan_results` (
+CREATE TABLE IF NOT EXISTS `scan_results` (
   `scanID` int NOT NULL AUTO_INCREMENT,
   `scanDateTIme` datetime NOT NULL,
   `scanPass` tinyint NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE `scan_results` (
   CONSTRAINT `fk_scanuser` FOREIGN KEY (`scanUser`) REFERENCES `user_creds` (`uid`);
 
 -- FK references scanID in results; we tie multiple results (all of these entries are sec violations) to one scanID
-CREATE TABLE `results_rtkit` (
+CREATE TABLE IF NOT EXISTS `results_rtkit` (
   `rID` int NOT NULL,
   `scanID` int DEFAULT NULL,
   `rtkitInfectedProgram` varchar(255) NOT NULL,
