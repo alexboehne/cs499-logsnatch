@@ -46,25 +46,39 @@ touch /var/lib/logsnatch/rootkit-trigger
 chown logsnatch:logsnatch /var/lib/logsnatch/rootkit-trigger
 chmod 600 /var/lib/logsnatch/rootkit-trigger
 
-# add the Rootkit Scan Script
-cat > /usr/local/bin/logsnatch-rootkit.sh <<"EOF"
-#!/bin/bash
+# ... (Keep everything above the "Deploying base Rootkit Scanner module..." line the same) ...
 
-# Added the scan type to the log name to prevent overlaps with future modules
-OUTPUT_FILE="/var/log/scan_results_rootkit_$(date -Iseconds).log"
+echo "[INFO] Moving scripts to /usr/local/bin..."
+chown -R root:root ./shell-tools/*
+chmod -R 700 ./shell-tools/
+cp ./shell-tools/* /usr/local/bin/
 
-SCAN_OUTPUT=$(/usr/sbin/chkrootkit -q 2>&1 | grep -v "RTNETLINK answers: Invalid argument" | grep "INFECTED")
-JSON_DATA=$(jq -n --arg out "$SCAN_OUTPUT" '{"status": "complete", "timestamp": "hmm", "results": $out}')
-
-echo "$JSON_DATA" > "$OUTPUT_FILE"
-EOF
-
-chown root:root /usr/local/bin/logsnatch-rootkit.sh
-chmod 700 /usr/local/bin/logsnatch-rootkit.sh
-
-echo "[INFO] Reloading systemd and enabling the rootkit path monitor..."
-
+echo "[INFO] Reloading systemd..."
 systemctl daemon-reload
-systemctl enable --now logsnatch@rootkit.path
 
-echo "[SUCCESS] Setup complete. The system is now watching for changes to /var/lib/logsnatch/rootkit-trigger."
+echo "[INFO] Configuring triggers and listeners for all shell-tools..."
+
+# Loop through every script we just copied
+for script in /usr/local/bin/logsnatch-*.sh; do
+    
+    # Extract just the scan name (e.g., turns "/usr/local/bin/logsnatch-malware.sh" into "malware")
+    # || true prevents the script from failing if no files are found
+    filename=$(basename "$script")
+    scan_name=$(echo "$filename" | sed 's/logsnatch-//; s/\.sh//')
+    
+    if [[ -z "$scan_name" || "$scan_name" == "*" ]]; then
+        continue
+    fi
+
+    echo " -> Setting up: $scan_name"
+
+    trigger_file="/var/lib/logsnatch/${scan_name}-trigger"
+    touch "$trigger_file"
+    chown logsnatch:logsnatch "$trigger_file"
+    chmod 600 "$trigger_file"
+
+    systemctl enable --now "logsnatch@${scan_name}.path"
+
+done
+
+echo "[SUCCESS] Setup complete. The system is now watching triggers for all installed modules."
