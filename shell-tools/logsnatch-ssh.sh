@@ -1,7 +1,6 @@
 #!/bin/bash
 
-# Define the output file using ISO 8601 format for easy parsing
-OUTPUT_FILE="/var/log/scan_results$(date -Iseconds).log"
+OUTPUT_FILE="/var/log/scan-ssh-$(date -Iseconds).log"
 
 get_ssh_config_json() {
     local sshd_config="/etc/ssh/sshd_config"

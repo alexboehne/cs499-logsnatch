@@ -29,16 +29,16 @@ db.connect((err) => {
 });
 
 // Path to the trigger file and log directory
-const triggerFile = '/var/lib/logsnatch/rootkit-trigger';
 const logDir = '/var/log';
 
-// Function to trigger the scan
-function triggerScan() {
+// Function to trigger a specific scan
+function triggerScan(scanName) {
   try {
+    const triggerFile = `/var/lib/logsnatch/${scanName}-trigger`;
     fs.utimesSync(triggerFile, new Date(), new Date()); // Update the timestamp to trigger the scan
-    console.log('Scan triggered successfully');
+    console.log(`Scan triggered successfully: ${scanName}`);
   } catch (err) {
-    console.error('Error triggering scan:', err);
+    console.error(`Error triggering scan: ${scanName}`, err);
     throw err;
   }
 }
@@ -70,7 +70,7 @@ function fetchResults() {
 }
 
 // Function to insert scan results into the database
-function insertScanResults(scanData, userId) {
+function insertRTkitResults(scanData, userId, scanName) {
   return new Promise((resolve, reject) => {
     // Insert into scan_results table
     const scanSql = 'INSERT INTO scan_results (scanDateTime, scanPass, scanUser) VALUES (?, ?, ?)';
@@ -92,6 +92,40 @@ function insertScanResults(scanData, userId) {
         db.query(rtkitSql, rtkitValues, (err) => {
           if (err) {
             console.error('Error inserting into results_rtkit:', err);
+            return reject(err);
+          }
+          resolve({ success: true, scanId });
+        });
+      } else {
+        resolve({ success: true, scanId });
+      }
+    });
+  });
+}
+
+// Function to insert SSH scan results into the database
+function insertSSHResults(scanData, userId, scanName) {
+  return new Promise((resolve, reject) => {
+    // Insert into scan_results table
+    const scanSql = 'INSERT INTO scan_results (scanDateTime, scanPass, scanUser) VALUES (?, ?, ?)';
+    const scanValues = [new Date(), scanData.results.includes('SSH_VIOLATION') ? 0 : 1, userId];
+
+    db.query(scanSql, scanValues, (err, result) => {
+      if (err) {
+        console.error('Error inserting into scan_results:', err);
+        return reject(err);
+      }
+
+      const scanId = result.insertId;
+
+      // Insert into results_ssh only if SSH violations are detected
+      if (scanData.results && scanData.results.includes('SSH_VIOLATION')) {
+        const sshSql = 'INSERT INTO results_ssh (scanID, sshViolationType, sshViolationDetails, sshLogLocation) VALUES (?, ?, ?, ?)';
+        const sshValues = [scanId, 'SSH_VIOLATION', scanData.results, path.join(logDir, `scan_results${new Date().toISOString()}.log`)];
+
+        db.query(sshSql, sshValues, (err) => {
+          if (err) {
+            console.error('Error inserting into results_ssh:', err);
             return reject(err);
           }
           resolve({ success: true, scanId });
@@ -146,21 +180,29 @@ app.post('/api/createUser', (req, res) => {
     });
 });
 
-// API Endpoint to trigger a rootkit scan
+// API Endpoint to trigger a specific scan
 app.post('/api/trigger-scan', async (req, res) => {
   try {
-    const { userId } = req.body;
-    if (!userId) {
-      return res.status(400).json({ success: false, error: 'User ID is required' });
+    const { userId, scanName } = req.body;
+    if (!userId || !scanName) {
+      return res.status(400).json({ success: false, error: 'User ID and scan name are required' });
     }
 
-    triggerScan();
+    triggerScan(scanName);
 
     // Wait for the scan to complete (adjust the delay as needed)
     setTimeout(async () => {
       try {
         const results = await fetchResults();
-        const dbResult = await insertScanResults(results, userId);
+        let dbResult;
+        
+        // Use the appropriate insertion function based on the scan type
+        if (scanName === 'ssh') {
+          dbResult = await insertSSHResults(results, userId, scanName);
+        } else {
+          dbResult = await insertRTkitResults(results, userId, scanName);
+        }
+        
         res.status(200).json({ success: true, message: 'Scan triggered and results stored', results, dbResult });
       } catch (err) {
         console.error('Error processing scan results:', err);
@@ -188,31 +230,4 @@ app.get('/api/fetch-results', async (req, res) => {
 const PORT = 5000;
 app.listen(PORT, () => {
     console.log(`Backend server running on http://localhost:${PORT}`);
-});
-
-// API Endpoint to add new item
-app.post('/api/items', (req, res) => {
-    // Extract the data from frontend
-    const { name, description } = req.body;
-
-    if (!name || !description) {
-        return res.status(400).json({ error: 'Name and description are required' });
-    }
-
-    // Insert with param queries (JS is cool)
-    const sql = 'INSERT INTO items (name, description) VALUES (?, ?)';
-    
-    db.query(sql, [name, description], (err, result) => {
-        if (err) {
-            console.error('Error inserting data:', err);
-            return res.status(500).json({ error: 'Database insertion failed' });
-        }
-        
-        // Send back item
-        res.status(201).json({ 
-            id: result.insertId, 
-            name: name, 
-            description: description 
-        });
-    });
 });

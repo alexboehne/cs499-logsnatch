@@ -46,8 +46,6 @@ touch /var/lib/logsnatch/rootkit-trigger
 chown logsnatch:logsnatch /var/lib/logsnatch/rootkit-trigger
 chmod 600 /var/lib/logsnatch/rootkit-trigger
 
-# ... (Keep everything above the "Deploying base Rootkit Scanner module..." line the same) ...
-
 echo "[INFO] Moving scripts to /usr/local/bin..."
 chown -R root:root ./shell-tools/*
 chmod -R 700 ./shell-tools/

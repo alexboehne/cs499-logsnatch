@@ -39,5 +39,15 @@ CREATE TABLE IF NOT EXISTS `results_rtkit` (
   KEY `fk_scanid_idx` (`scanID`),
   CONSTRAINT `fk_scanid` FOREIGN KEY (`scanID`) REFERENCES `scan_results` (`scanID`);
 
+  CREATE TABLE IF NOT EXISTS `results_ssh` (
+  `rID` int NOT NULL,
+  `scanID` int DEFAULT NULL,
+  `sshViolation` varchar(255) NOT NULL,
+  `sshViolationLogLocation` varchar(255) NOT NULL,
+  PRIMARY KEY (`rID`),
+  UNIQUE KEY `scanID_UNIQUE` (`rID`),
+  KEY `fk_scanid_idx` (`scanID`),
+  CONSTRAINT `fk_scanid` FOREIGN KEY (`scanID`) REFERENCES `scan_results` (`scanID`);
+
 
 
