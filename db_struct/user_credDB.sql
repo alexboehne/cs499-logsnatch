@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS `auth_log` (
   `user` varchar(45) DEFAULT NULL,
   `logtime` datetime NOT NULL,
   `success` tinyint NOT NULL,
-  PRIMARY KEY (`iid`);
+  PRIMARY KEY (`iid`)
+);
 
 
 -- FK references the logged in user by their uid
@@ -26,7 +27,8 @@ CREATE TABLE IF NOT EXISTS `scan_results` (
   PRIMARY KEY (`scanID`),
   UNIQUE KEY `scanID_UNIQUE` (`scanID`),
   KEY `fk_scanuser_idx` (`scanUser`),
-  CONSTRAINT `fk_scanuser` FOREIGN KEY (`scanUser`) REFERENCES `user_creds` (`uid`);
+  CONSTRAINT `fk_scanuser` FOREIGN KEY (`scanUser`) REFERENCES `user_creds` (`uid`)
+);
 
 -- FK references scanID in results; we tie multiple results (all of these entries are sec violations) to one scanID
 CREATE TABLE IF NOT EXISTS `results_rtkit` (
@@ -36,18 +38,20 @@ CREATE TABLE IF NOT EXISTS `results_rtkit` (
   `rtkitLogLocation` varchar(255) NOT NULL,
   PRIMARY KEY (`rID`),
   UNIQUE KEY `scanID_UNIQUE` (`rID`),
-  KEY `fk_scanid_idx` (`scanID`),
-  CONSTRAINT `fk_scanid` FOREIGN KEY (`scanID`) REFERENCES `scan_results` (`scanID`);
+  KEY `fk_rtid_idx` (`scanID`),
+  CONSTRAINT `fk_rtid` FOREIGN KEY (`scanID`) REFERENCES `scan_results` (`scanID`)
+);
 
-  CREATE TABLE IF NOT EXISTS `results_ssh` (
+CREATE TABLE IF NOT EXISTS `results_ssh` (
   `rID` int NOT NULL,
   `scanID` int DEFAULT NULL,
   `sshViolation` varchar(255) NOT NULL,
   `sshViolationLogLocation` varchar(255) NOT NULL,
   PRIMARY KEY (`rID`),
   UNIQUE KEY `scanID_UNIQUE` (`rID`),
-  KEY `fk_scanid_idx` (`scanID`),
-  CONSTRAINT `fk_scanid` FOREIGN KEY (`scanID`) REFERENCES `scan_results` (`scanID`);
+  KEY `fk_sshid_idx` (`scanID`),
+  CONSTRAINT `fk_sshid` FOREIGN KEY (`scanID`) REFERENCES `scan_results` (`scanID`)
+);
 
 
 

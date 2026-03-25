@@ -9,6 +9,14 @@ echo "[INFO] Creating Logsnatch user and directory structure..."
 useradd -r -s /bin/false logsnatch || true # Ignore if user already exists
 mkdir -p /var/lib/logsnatch/logs
 
+# Add current user to logsnatch group for file access
+CURRENT_USER=$(logname)
+usermod -aG logsnatch "$CURRENT_USER" || true
+
+# Change directory group ownership to allow group write access
+chown root:logsnatch /var/lib/logsnatch/
+chmod 775 /var/lib/logsnatch/
+
 
 echo "[INFO] Installing Systemd Template Units..."
 
@@ -73,7 +81,7 @@ for script in /usr/local/bin/logsnatch-*.sh; do
     trigger_file="/var/lib/logsnatch/${scan_name}-trigger"
     touch "$trigger_file"
     chown logsnatch:logsnatch "$trigger_file"
-    chmod 600 "$trigger_file"
+    chmod 660 "$trigger_file"  # Allow group read/write access
 
     systemctl enable --now "logsnatch@${scan_name}.path"
 
