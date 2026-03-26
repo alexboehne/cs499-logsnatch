@@ -136,7 +136,7 @@ export default function App() {
     fetch("http://localhost:5000/api/validate-token", {
       method: "GET",
       headers: {
-        "Authorization": "Bearer " + token,
+        Authorization: "Bearer " + token,
       },
     })
       .then((res) => res.json())
