@@ -67,6 +67,7 @@ export default function App() {
   } = controller;
   const [onMouseEnter, setOnMouseEnter] = useState(false);
   const [rtlCache, setRtlCache] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false); // prevents flash of dashboard before redirect
   const { pathname } = useLocation();
 
   // Cache for the rtl
@@ -109,16 +110,48 @@ export default function App() {
     document.scrollingElement.scrollTop = 0;
   }, [pathname]);
 
-  //added by claude - for tokens
-  // prettier-ignore
+  // Token validation: pick up token from URL on first load, then verify it
+  // server-side. Expired or missing tokens redirect back to the login app.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
+    const urlToken = params.get("token");
+    const storedToken = localStorage.getItem("authToken");
+    const token = urlToken || storedToken;
+
     if (!token) {
       window.location.href = "http://localhost:3000";
-    } else {
-      localStorage.setItem("authToken", token);
+      return;
     }
+
+    // Persist whichever token we resolved
+    localStorage.setItem("authToken", token);
+
+    // Remove the token from the URL bar without triggering a reload
+    if (urlToken) {
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+    }
+
+    // Verify the token is still valid on the backend
+    fetch("http://localhost:5000/api/validate-token", {
+      method: "GET",
+      headers: {
+        "Authorization": "Bearer " + token,
+      },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.success) {
+          localStorage.removeItem("authToken");
+          window.location.href = "http://localhost:3000";
+        } else {
+          setAuthChecked(true); // token is valid — allow render
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem("authToken");
+        window.location.href = "http://localhost:3000";
+      });
   }, []);
 
   const getRoutes = (allRoutes) =>
@@ -157,6 +190,9 @@ export default function App() {
       </Icon>
     </MDBox>
   );
+
+  // Hold rendering until the token check resolves to avoid a flash of content
+  if (!authChecked) return null;
 
   return direction === "rtl" ? (
     <CacheProvider value={rtlCache}>
