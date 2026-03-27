@@ -2,40 +2,40 @@
 =========================================================
 * Material Dashboard 2 React - v2.2.0
 =========================================================
-
+ 
 * Product Page: https://www.creative-tim.com/product/material-dashboard-react
 * Copyright 2023 Creative Tim (https://www.creative-tim.com)
-
+ 
 Coded by www.creative-tim.com
-
+ 
  =========================================================
-
+ 
 * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 */
-
+ 
 // @mui material components
 import Drawer from "@mui/material/Drawer";
 import { styled } from "@mui/material/styles";
-
+ 
 export default styled(Drawer)(({ theme, ownerState }) => {
   const { palette, boxShadows, transitions, breakpoints, functions } = theme;
   const { transparentSidenav, whiteSidenav, miniSidenav, darkMode } = ownerState;
-
+ 
   const sidebarWidth = 250;
   const { transparent, gradients, white, background } = palette;
   const { xxl } = boxShadows;
   const { pxToRem, linearGradient } = functions;
-
+ 
   let backgroundValue = darkMode
     ? background.sidenav
     : linearGradient(gradients.dark.main, gradients.dark.state);
-
+ 
   if (transparentSidenav) {
     backgroundValue = transparent.main;
   } else if (whiteSidenav) {
     backgroundValue = white.main;
   }
-
+ 
   // styles for the sidenav when miniSidenav={false}
   const drawerOpenStyles = () => ({
     background: backgroundValue,
@@ -44,7 +44,7 @@ export default styled(Drawer)(({ theme, ownerState }) => {
       easing: transitions.easing.sharp,
       duration: transitions.duration.shorter,
     }),
-
+ 
     [breakpoints.up("xl")]: {
       boxShadow: transparentSidenav ? "none" : xxl,
       marginBottom: transparentSidenav ? 0 : "inherit",
@@ -57,7 +57,7 @@ export default styled(Drawer)(({ theme, ownerState }) => {
       }),
     },
   });
-
+ 
   // styles for the sidenav when miniSidenav={true}
   const drawerCloseStyles = () => ({
     background: backgroundValue,
@@ -66,7 +66,7 @@ export default styled(Drawer)(({ theme, ownerState }) => {
       easing: transitions.easing.sharp,
       duration: transitions.duration.shorter,
     }),
-
+ 
     [breakpoints.up("xl")]: {
       boxShadow: transparentSidenav ? "none" : xxl,
       marginBottom: transparentSidenav ? 0 : "inherit",
@@ -80,12 +80,15 @@ export default styled(Drawer)(({ theme, ownerState }) => {
       }),
     },
   });
-
+ 
   return {
     "& .MuiDrawer-paper": {
       boxShadow: xxl,
       border: "none",
-
+      // flex column lets mt="auto" on the logout box push it to the bottom
+      display: "flex",
+      flexDirection: "column",
+ 
       ...(miniSidenav ? drawerCloseStyles() : drawerOpenStyles()),
     },
   };
