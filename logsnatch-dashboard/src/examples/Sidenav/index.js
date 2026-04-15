@@ -63,27 +63,46 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
 
   const closeSidenav = () => setMiniSidenav(dispatch, true);
 
+  // ---------------------------------------------------------------------------
+  // Logout: call the backend to invalidate the token, then clear local storage
+  // and send the user back to the login app.
+  // ---------------------------------------------------------------------------
+  const handleLogout = () => {
+    const token = localStorage.getItem("authToken");
+
+    fetch("http://localhost:5000/api/logout", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + token,
+      },
+    })
+      .catch(() => {
+        // Even if the network call fails, still clear the token locally
+      })
+      .finally(() => {
+        localStorage.removeItem("authToken");
+        window.location.href = "http://localhost:3000";
+      });
+  };
+
   useEffect(() => {
-    // A function that sets the mini state of the sidenav.
     function handleMiniSidenav() {
       setMiniSidenav(dispatch, window.innerWidth < 1200);
       setTransparentSidenav(dispatch, window.innerWidth < 1200 ? false : transparentSidenav);
       setWhiteSidenav(dispatch, window.innerWidth < 1200 ? false : whiteSidenav);
     }
 
-    /** 
-     The event listener that's calling the handleMiniSidenav function when resizing the window.
-    */
+    // Add resize listener
     window.addEventListener("resize", handleMiniSidenav);
 
-    // Call the handleMiniSidenav function to set the state with the initial value.
+    // Initial state
     handleMiniSidenav();
 
-    // Remove event listener on cleanup
+    // Cleanup
     return () => window.removeEventListener("resize", handleMiniSidenav);
   }, [dispatch, location]);
 
-  // Render all the routes from the routes.js (All the visible items on the Sidenav)
+  // Render all the routes from routes.js
   const renderRoutes = routes.map(({ type, name, icon, title, noCollapse, key, href, route }) => {
     let returnValue;
 
@@ -160,6 +179,7 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
             <Icon sx={{ fontWeight: "bold" }}>close</Icon>
           </MDTypography>
         </MDBox>
+
         <MDBox component={NavLink} to="/" display="flex" alignItems="center">
           {brand && <MDBox component="img" src={brand} alt="Brand" width="2rem" />}
           <MDBox
@@ -172,24 +192,44 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
           </MDBox>
         </MDBox>
       </MDBox>
+
       <Divider
         light={
           (!darkMode && !whiteSidenav && !transparentSidenav) ||
           (darkMode && !transparentSidenav && whiteSidenav)
         }
       />
+
       <List>{renderRoutes}</List>
+
+      {/* Logout pinned to bottom */}
+      <MDBox mt="auto" pb={3} px={4}>
+        <MDTypography
+          variant="button"
+          color={textColor}
+          fontWeight="medium"
+          onClick={handleLogout}
+          sx={{
+            cursor: "pointer",
+            opacity: 0.75,
+            "&:hover": { opacity: 1 },
+            userSelect: "none",
+          }}
+        >
+          Logout
+        </MDTypography>
+      </MDBox>
     </SidenavRoot>
   );
 }
 
-// Setting default values for the props of Sidenav
+// Default props
 Sidenav.defaultProps = {
   color: "info",
   brand: "",
 };
 
-// Typechecking props for the Sidenav
+// Prop types
 Sidenav.propTypes = {
   color: PropTypes.oneOf(["primary", "secondary", "info", "success", "warning", "error", "dark"]),
   brand: PropTypes.string,

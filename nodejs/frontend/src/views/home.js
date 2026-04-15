@@ -1,53 +1,53 @@
-import React, { useState } from 'react' 
+import React, { useState } from 'react'
 import { Helmet } from 'react-helmet'
 import './home.css'
 
 const Home = (props) => {
-const [username, setUsername] = useState('')
-const [password, setPassword] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
 
-const handleLogin = (e) => {
-  e.preventDefault()
+  const handleLogin = (e) => {
+    e.preventDefault()
 
-  fetch('http://localhost:5000/api/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
-  })
-    .then((res) => res.json())
-    .then((data) => {
-      if (data.success) {
-        console.log('Logged in User ID:', data.user.uid);
-        alert(`Welcome back, ${data.user.username}!`);
-        //added by claude - connect the 2 react apps
-        localStorage.setItem('authToken', data.token)
-        window.location.href = 'http://localhost:3001/dashboard?token=' + data.token
-      } else {
-        alert(data.message);
-      }
-  })   
- .catch((err) => console.error('Login error:', err))
-}
+    fetch('http://localhost:5000/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          console.log('Logged in User ID:', data.user.uid)
+          alert(`Welcome back, ${data.user.username}!`)
+          localStorage.setItem('authToken', data.token)
+          // Pass token in URL for the dashboard to pick up on first load
+          window.location.href = 'http://localhost:3001/dashboard?token=' + data.token
+        } else {
+          alert(data.message)
+        }
+      })
+      .catch((err) => console.error('Login error:', err))
+  }
 
-const handleUserCreation = (e) => { 
-  e.preventDefault()
+  const handleUserCreation = (e) => {
+    e.preventDefault()
 
-  fetch('http://localhost:5000/api/createUser', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
-  })
-    .then((res) => res.json())
-    .then((data) => {
-      if (data.success) {
-        console.log('New User ID:', data.user);
-        alert(`Created user \"${data.username}\"`);
-      } else {
-        alert(data.message);
-      }
-  })   
- .catch((err) => console.error('Login error:', err))
-}
+    fetch('http://localhost:5000/api/createUser', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          console.log('New User ID:', data.user)
+          alert(`Created user \"${data.username}\"`)
+        } else {
+          alert(data.message)
+        }
+      })
+      .catch((err) => console.error('Create user error:', err))
+  }
 
   return (
     <div className="home-container1">
@@ -63,7 +63,7 @@ const handleUserCreation = (e) => {
           type="text"
           placeholder="ssn"
           className="home-textinput1 input"
-          style={{ display: 'none' }} 
+          style={{ display: 'none' }}
         />
 
         <div className="home-container2">
@@ -95,7 +95,7 @@ const handleUserCreation = (e) => {
         <button type="submit" className="home-button1 button">
           Login
         </button>
-        
+
         <button type="button" className="button" onClick={handleUserCreation}>
           Create Account
         </button>

@@ -85,6 +85,9 @@ export default styled(Drawer)(({ theme, ownerState }) => {
     "& .MuiDrawer-paper": {
       boxShadow: xxl,
       border: "none",
+      // flex column lets mt="auto" on the logout box push it to the bottom
+      display: "flex",
+      flexDirection: "column",
 
       ...(miniSidenav ? drawerCloseStyles() : drawerOpenStyles()),
     },

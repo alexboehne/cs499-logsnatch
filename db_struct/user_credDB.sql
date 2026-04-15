@@ -16,6 +16,17 @@ CREATE TABLE IF NOT EXISTS `auth_log` (
   PRIMARY KEY (`iid`)
 );
 
+-- Sessions table: stores active login tokens with expiry
+CREATE TABLE IF NOT EXISTS `user_sessions` (
+  `session_id`  INT          NOT NULL AUTO_INCREMENT,
+  `uid`         INT          NOT NULL,
+  `token`       VARCHAR(64)  NOT NULL UNIQUE,
+  `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `expires_at`  DATETIME     NOT NULL,
+  PRIMARY KEY (`session_id`),
+  KEY `fk_session_user_idx` (`uid`),
+  CONSTRAINT `fk_session_user` FOREIGN KEY (`uid`) REFERENCES `user_creds` (`uid`) ON DELETE CASCADE
+);
 
 -- FK references the logged in user by their uid
 CREATE TABLE IF NOT EXISTS `scan_results` (
