@@ -35,7 +35,15 @@ const logDir = '/var/log';
 function triggerScan(scanName) {
   try {
     const triggerFile = `/var/lib/logsnatch/${scanName}-trigger`;
-    fs.utimesSync(triggerFile, new Date(), new Date()); // Update the timestamp to trigger the scan
+    // Try utimes first, fall back to append if that fails
+    try {
+      fs.utimesSync(triggerFile, new Date(), new Date());
+    } catch (utimesErr) {
+      // If utimes fails, try appending a newline to trigger the change
+      fs.appendFileSync(triggerFile, '\n');
+      // Then truncate back to original size
+      fs.truncateSync(triggerFile, 0);
+    }
     console.log(`Scan triggered successfully: ${scanName}`);
   } catch (err) {
     console.error(`Error triggering scan: ${scanName}`, err);
