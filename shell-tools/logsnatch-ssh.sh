@@ -1,6 +1,7 @@
 #!/bin/bash
 
-OUTPUT_FILE="/var/log/scan-ssh-$(date -Iseconds).log"
+# Allow OUTPUT_FILE to be overridden by environment variable
+OUTPUT_FILE=${OUTPUT_FILE:-"/var/log/scan-ssh-$(date -Iseconds).log"}
 
 get_ssh_config_json() {
     local sshd_config="/etc/ssh/sshd_config"

@@ -41,6 +41,20 @@ EOF
 
 echo "[INFO] Deploying base Rootkit Scanner module..."
 
+# Install jq if not present (required for rootkit scan JSON processing)
+if ! command -v jq &> /dev/null; then
+    echo "[INFO] Installing jq for JSON processing..."
+    if command -v apt-get &> /dev/null; then
+        apt-get update && apt-get install -y jq
+    elif command -v yum &> /dev/null; then
+        yum install -y jq
+    elif command -v dnf &> /dev/null; then
+        dnf install -y jq
+    else
+        echo "[WARNING] Could not install jq - package manager not found"
+    fi
+fi
+
 # rootkit Trigger File
 touch /var/lib/logsnatch/rootkit-trigger
 chown logsnatch:logsnatch /var/lib/logsnatch/rootkit-trigger
@@ -48,8 +62,9 @@ chmod 600 /var/lib/logsnatch/rootkit-trigger
 
 echo "[INFO] Moving scripts to /usr/local/bin..."
 chown -R root:root ./shell-tools/*
-chmod -R 700 ./shell-tools/
+chmod -R 755 ./shell-tools/
 cp ./shell-tools/* /usr/local/bin/
+chmod 755 /usr/local/bin/logsnatch-*.sh
 
 echo "[INFO] Reloading systemd..."
 systemctl daemon-reload
@@ -73,10 +88,11 @@ for script in /usr/local/bin/logsnatch-*.sh; do
     trigger_file="/var/lib/logsnatch/${scan_name}-trigger"
     touch "$trigger_file"
     chown logsnatch:logsnatch "$trigger_file"
-    chmod 600 "$trigger_file"
+    chmod 664 "$trigger_file"
+    chmod g+w "$trigger_file"
 
     systemctl enable --now "logsnatch@${scan_name}.path"
 
 done
-
+find . -type f -print0 | xargs -0 dos2unix
 echo "[SUCCESS] Setup complete. The system is now watching triggers for all installed modules."

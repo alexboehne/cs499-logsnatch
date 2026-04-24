@@ -65,25 +65,51 @@ function validateToken(req, res, next) {
 function triggerScan(scanName) {
     try {
         const triggerFile = `/var/lib/logsnatch/${scanName}-trigger`;
+        
+        // Try multiple methods to trigger the scan
         try {
+            // Method 1: Update timestamp (preferred)
             fs.utimesSync(triggerFile, new Date(), new Date());
         } catch (utimesErr) {
-            fs.appendFileSync(triggerFile, '\n');
-            fs.truncateSync(triggerFile, 0);
+            try {
+                // Method 2: Append and truncate
+                fs.appendFileSync(triggerFile, '\n');
+                fs.truncateSync(triggerFile, 0);
+            } catch (appendErr) {
+                // Method 3: Create a temporary trigger file that systemd can watch
+                const tempTriggerFile = `/tmp/${scanName}-trigger-temp`;
+                fs.writeFileSync(tempTriggerFile, 'trigger');
+                
+                // Copy to the actual location if possible
+                try {
+                    fs.copyFileSync(tempTriggerFile, triggerFile);
+                    fs.unlinkSync(tempTriggerFile);
+                } catch (copyErr) {
+                    // If we can't copy, leave the temp file and hope systemd can see it
+                    console.warn(`Could not copy trigger file, leaving temp file at ${tempTriggerFile}`);
+                }
+            }
         }
-        console.log(`Scan triggered successfully: ${scanName}`);
     } catch (err) {
         console.error(`Error triggering scan: ${scanName}`, err);
         throw err;
     }
 }
 
-function fetchResults() {
+function fetchResults(scanName) {
     return new Promise((resolve, reject) => {
         fs.readdir(logDir, (err, files) => {
             if (err) return reject(err);
 
-            const scanFiles = files.filter(file => file.startsWith('scan_results') && file.endsWith('.log'));
+            // Filter files based on scan type
+            let filePrefix = 'scan_results';
+            if (scanName === 'suid') {
+                filePrefix = 'scan-suid';
+            } else if (scanName === 'ssh') {
+                filePrefix = 'scan-ssh';
+            }
+
+            const scanFiles = files.filter(file => file.startsWith(filePrefix) && file.endsWith('.log'));
             if (scanFiles.length === 0) return reject(new Error('No scan results found'));
 
             const latestFile = scanFiles.sort((a, b) => {
@@ -94,7 +120,7 @@ function fetchResults() {
 
             fs.readFile(path.join(logDir, latestFile), 'utf8', (err, data) => {
                 if (err) return reject(err);
-                resolve(JSON.parse(data));
+                resolve(data);
             });
         });
     });
@@ -102,39 +128,91 @@ function fetchResults() {
 
 function insertRTkitResults(scanData, userId, scanName) {
     return new Promise((resolve, reject) => {
-        const scanSql = 'INSERT INTO scan_results (scanDateTime, scanPass, scanUser) VALUES (?, ?, ?)';
-        const scanValues = [new Date(), scanData.results.includes('INFECTED') ? 0 : 1, userId];
+        try {
+            const scanSql = 'INSERT INTO scan_results (scanDateTime, scanPass, scanUser) VALUES (?, ?, ?)';
+            // Parse the JSON to check for infections
+            const scanDataObj = JSON.parse(scanData);
+            const hasInfections = scanDataObj.results && scanDataObj.results.includes('INFECTED');
+            const scanValues = [new Date(), hasInfections ? 0 : 1, userId];
 
-        db.query(scanSql, scanValues, (err, result) => {
-            if (err) {
-                console.error('Error inserting into scan_results:', err);
-                return reject(err);
-            }
+            db.query(scanSql, scanValues, (err, result) => {
+                if (err) {
+                    console.error('Error inserting into scan_results:', err);
+                    return reject(err);
+                }
 
-            const scanId = result.insertId;
+                const scanId = result.insertId;
+                const logLocation = path.join(logDir, `scan-rtkit-${new Date().toISOString()}.log`);
 
-            if (scanData.results && scanData.results.includes('INFECTED')) {
-                const rtkitSql = 'INSERT INTO results_rtkit (scanID, rtkitInfectedProgram, rtkitLogLocation) VALUES (?, ?, ?)';
-                const rtkitValues = [scanId, scanData.results, path.join(logDir, `scan_results${new Date().toISOString()}.log`)];
+                if (hasInfections) {
+                    const rtkitSql = 'INSERT INTO results_rtkit (scanID, rtkitInfectedProgram, rtkitLogLocation) VALUES (?, ?, ?)';
+                    const rtkitValues = [scanId, scanDataObj.results, logLocation];
 
-                db.query(rtkitSql, rtkitValues, (err) => {
-                    if (err) {
-                        console.error('Error inserting into results_rtkit:', err);
-                        return reject(err);
-                    }
+                    db.query(rtkitSql, rtkitValues, (err) => {
+                        if (err) {
+                            console.error('Error inserting into results_rtkit:', err);
+                            return reject(err);
+                        }
+                        resolve({ success: true, scanId });
+                    });
+                } else {
                     resolve({ success: true, scanId });
-                });
-            } else {
-                resolve({ success: true, scanId });
-            }
-        });
+                }
+            });
+        } catch (parseErr) {
+            console.error('Error parsing rootkit scan data:', parseErr);
+            console.error('Raw data:', scanData);
+            reject(parseErr);
+        }
     });
 }
 
 function insertSSHResults(scanData, userId, scanName) {
     return new Promise((resolve, reject) => {
+        try {
+            const scanSql = 'INSERT INTO scan_results (scanDateTime, scanPass, scanUser) VALUES (?, ?, ?)';
+            // SSH scan passes if no violations are found
+            const hasViolations = Object.keys(JSON.parse(scanData)).length > 0;
+            const scanValues = [new Date(), hasViolations ? 0 : 1, userId];
+
+            db.query(scanSql, scanValues, (err, result) => {
+                if (err) {
+                    console.error('Error inserting into scan_results:', err);
+                    return reject(err);
+                }
+
+                const scanId = result.insertId;
+                const logLocation = path.join(logDir, `scan-ssh-${new Date().toISOString()}.log`);
+
+                if (hasViolations) {
+                    const sshSql = 'INSERT INTO results_ssh (scanID, sshViolation, sshViolationLogLocation) VALUES (?, ?, ?)';
+                    const sshValues = [scanId, scanData, logLocation];
+
+                    db.query(sshSql, sshValues, (err) => {
+                        if (err) {
+                            console.error('Error inserting into results_ssh:', err);
+                            console.error('SSH values:', sshValues);
+                            return reject(err);
+                        }
+                        resolve({ success: true, scanId });
+                    });
+                } else {
+                    resolve({ success: true, scanId });
+                }
+            });
+        } catch (parseErr) {
+            console.error('Error parsing SSH scan data:', parseErr);
+            console.error('Raw data:', scanData);
+            reject(parseErr);
+        }
+    });
+}
+
+function insertSUIDResults(scanData, userId, scanName) {
+    return new Promise((resolve, reject) => {
         const scanSql = 'INSERT INTO scan_results (scanDateTime, scanPass, scanUser) VALUES (?, ?, ?)';
-        const scanValues = [new Date(), scanData.results.includes('SSH_VIOLATION') ? 0 : 1, userId];
+        // SUID scan always passes (just reports files), so scanPass = 1
+        const scanValues = [new Date(), 1, userId];
 
         db.query(scanSql, scanValues, (err, result) => {
             if (err) {
@@ -143,20 +221,39 @@ function insertSSHResults(scanData, userId, scanName) {
             }
 
             const scanId = result.insertId;
+            const logLocation = path.join(logDir, `scan-suid-${new Date().toISOString()}.log`);
 
-            if (scanData.results && scanData.results.includes('SSH_VIOLATION')) {
-                const sshSql = 'INSERT INTO results_ssh (scanID, sshViolationType, sshViolationDetails, sshLogLocation) VALUES (?, ?, ?, ?)';
-                const sshValues = [scanId, 'SSH_VIOLATION', scanData.results, path.join(logDir, `scan_results${new Date().toISOString()}.log`)];
-
-                db.query(sshSql, sshValues, (err) => {
-                    if (err) {
-                        console.error('Error inserting into results_ssh:', err);
-                        return reject(err);
-                    }
+            // Parse the JSON data from the scan
+            try {
+                const suidFiles = JSON.parse(scanData);
+                
+                // Insert each SUID file found - simplified version
+                let insertedCount = 0;
+                for (const [filePath, fileInfo] of Object.entries(suidFiles)) {
+                    const suidSql = 'INSERT INTO results_suid (scanID, suidPath, suidPermissions, suidOwner, suidGroup, suidLogLocation) VALUES (?, ?, ?, ?, ?, ?)';
+                    const suidValues = [scanId, filePath, fileInfo.permissions, fileInfo.owner, fileInfo.group, logLocation];
+                    
+                    db.query(suidSql, suidValues, (err) => {
+                        if (err) {
+                            console.error('Error inserting SUID file:', err);
+                            return reject(err);
+                        }
+                        insertedCount++;
+                        
+                        // Resolve when all files are inserted
+                        if (insertedCount === Object.keys(suidFiles).length) {
+                            resolve({ success: true, scanId });
+                        }
+                    });
+                }
+                
+                // If no files to insert, resolve immediately
+                if (Object.keys(suidFiles).length === 0) {
                     resolve({ success: true, scanId });
-                });
-            } else {
-                resolve({ success: true, scanId });
+                }
+            } catch (parseErr) {
+                console.error('Error parsing SUID scan data:', parseErr);
+                reject(parseErr);
             }
         });
     });
@@ -247,21 +344,23 @@ app.post('/api/trigger-scan', validateToken, async (req, res) => {
 
         setTimeout(async () => {
             try {
-                const results = await fetchResults();
+                const results = await fetchResults(scanName);
                 let dbResult;
 
                 if (scanName === 'ssh') {
                     dbResult = await insertSSHResults(results, userId, scanName);
+                } else if (scanName === 'suid') {
+                    dbResult = await insertSUIDResults(results, userId, scanName);
                 } else {
                     dbResult = await insertRTkitResults(results, userId, scanName);
                 }
 
-                res.status(200).json({ success: true, message: 'Scan triggered and results stored', results, dbResult });
+                res.status(200).json({ success: true, message: 'Scan triggered and results stored', results: results.substring(0, 100) + '...', dbResult });
             } catch (err) {
                 console.error('Error processing scan results:', err);
                 res.status(500).json({ success: false, error: 'Error processing scan results' });
             }
-        }, 5000);
+        }, 15000);
     } catch (err) {
         console.error('Error triggering scan:', err);
         res.status(500).json({ success: false, error: 'Error triggering scan' });

@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS `scan_results` (
 
 -- FK references scanID in results; we tie multiple results (all of these entries are sec violations) to one scanID
 CREATE TABLE IF NOT EXISTS `results_rtkit` (
-  `rID` int NOT NULL,
+  `rID` int NOT NULL AUTO_INCREMENT,
   `scanID` int DEFAULT NULL,
   `rtkitInfectedProgram` varchar(255) NOT NULL,
   `rtkitLogLocation` varchar(255) NOT NULL,
@@ -54,14 +54,28 @@ CREATE TABLE IF NOT EXISTS `results_rtkit` (
 );
 
 CREATE TABLE IF NOT EXISTS `results_ssh` (
-  `rID` int NOT NULL,
+  `rID` int NOT NULL AUTO_INCREMENT,
   `scanID` int DEFAULT NULL,
-  `sshViolation` varchar(255) NOT NULL,
+  `sshViolation` TEXT NOT NULL,
   `sshViolationLogLocation` varchar(255) NOT NULL,
   PRIMARY KEY (`rID`),
   UNIQUE KEY `scanID_UNIQUE` (`rID`),
   KEY `fk_sshid_idx` (`scanID`),
   CONSTRAINT `fk_sshid` FOREIGN KEY (`scanID`) REFERENCES `scan_results` (`scanID`)
+);
+
+CREATE TABLE IF NOT EXISTS `results_suid` (
+  `rID` int NOT NULL AUTO_INCREMENT,
+  `scanID` int DEFAULT NULL,
+  `suidPath` varchar(255) NOT NULL,
+  `suidPermissions` varchar(20) NOT NULL,
+  `suidOwner` varchar(50) NOT NULL,
+  `suidGroup` varchar(50) NOT NULL,
+  `suidLogLocation` varchar(255) NOT NULL,
+  PRIMARY KEY (`rID`),
+  UNIQUE KEY `scanID_UNIQUE` (`rID`),
+  KEY `fk_suidid_idx` (`scanID`),
+  CONSTRAINT `fk_suidid` FOREIGN KEY (`scanID`) REFERENCES `scan_results` (`scanID`)
 );
 
 
