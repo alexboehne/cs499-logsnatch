@@ -225,10 +225,26 @@ function insertSUIDResults(scanData, userId, scanName) {
 
             // Parse the JSON data from the scan
             try {
-                const suidFiles = JSON.parse(scanData);
+                // Handle malformed JSON that's missing outer braces
+                let suidFiles;
+                if (scanData.trim().startsWith('{')) {
+                    // Normal JSON format
+                    suidFiles = JSON.parse(scanData);
+                } else {
+                    // Malformed format - wrap with braces
+                    const wrappedData = `{${scanData}}`;
+                    suidFiles = JSON.parse(wrappedData);
+                }
                 
                 // Insert each SUID file found - simplified version
                 let insertedCount = 0;
+                const fileCount = Object.keys(suidFiles).length;
+                
+                if (fileCount === 0) {
+                    resolve({ success: true, scanId });
+                    return;
+                }
+                
                 for (const [filePath, fileInfo] of Object.entries(suidFiles)) {
                     const suidSql = 'INSERT INTO results_suid (scanID, suidPath, suidPermissions, suidOwner, suidGroup, suidLogLocation) VALUES (?, ?, ?, ?, ?, ?)';
                     const suidValues = [scanId, filePath, fileInfo.permissions, fileInfo.owner, fileInfo.group, logLocation];
@@ -241,18 +257,14 @@ function insertSUIDResults(scanData, userId, scanName) {
                         insertedCount++;
                         
                         // Resolve when all files are inserted
-                        if (insertedCount === Object.keys(suidFiles).length) {
+                        if (insertedCount === fileCount) {
                             resolve({ success: true, scanId });
                         }
                     });
                 }
-                
-                // If no files to insert, resolve immediately
-                if (Object.keys(suidFiles).length === 0) {
-                    resolve({ success: true, scanId });
-                }
             } catch (parseErr) {
                 console.error('Error parsing SUID scan data:', parseErr);
+                console.error('Raw data preview:', scanData.substring(0, 200));
                 reject(parseErr);
             }
         });
