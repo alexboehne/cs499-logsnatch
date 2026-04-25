@@ -4,6 +4,67 @@ if [[ $(/usr/bin/id -u) -ne 0 ]]; then
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# Cleanup Section - Remove previous installations
+# ---------------------------------------------------------------------------
+echo "[CLEANUP] Beginning cleanup of previous installations..."
+
+# 1. Stop and disable existing systemd services
+read -p "[CLEANUP] Stop and disable existing systemd services? [y/N] " -n 1 -r
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo ""
+    echo "[CLEANUP] Stopping and disabling systemd services..."
+    for unit in logsnatch@*.service logsnatch@*.path; do
+        systemctl stop "$unit" 2>/dev/null || true
+        systemctl disable "$unit" 2>/dev/null || true
+    done
+    systemctl daemon-reload
+    systemctl reset-failed
+else
+    echo ""
+    echo "[CLEANUP] Skipping systemd service cleanup"
+fi
+
+# 2. Remove existing scripts
+read -p "[CLEANUP] Remove existing scripts from /usr/local/bin/? [y/N] " -n 1 -r
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo ""
+    echo "[CLEANUP] Removing existing scripts..."
+    rm -f /usr/local/bin/logsnatch-*.sh
+else
+    echo ""
+    echo "[CLEANUP] Skipping script removal"
+fi
+
+# 3. Remove trigger files
+read -p "[CLEANUP] Remove existing trigger files? [y/N] " -n 1 -r
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo ""
+    echo "[CLEANUP] Removing trigger files..."
+    rm -f /var/lib/logsnatch/*-trigger
+else
+    echo ""
+    echo "[CLEANUP] Skipping trigger file removal"
+fi
+
+# 4. Remove systemd unit files
+read -p "[CLEANUP] Remove existing systemd unit files? [y/N] " -n 1 -r
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo ""
+    echo "[CLEANUP] Removing systemd unit files..."
+    rm -f /etc/systemd/system/logsnatch@.service
+    rm -f /etc/systemd/system/logsnatch@.path
+else
+    echo ""
+    echo "[CLEANUP] Skipping systemd unit file removal"
+fi
+
+echo "[CLEANUP] Cleanup complete"
+echo ""
+
+# ---------------------------------------------------------------------------
+# Main Installation
+# ---------------------------------------------------------------------------
 echo "[INFO] Creating Logsnatch user and directory structure..."
 
 useradd -r -s /bin/false logsnatch || true # Ignore if user already exists
