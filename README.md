@@ -8,15 +8,6 @@
 
 `sudo systemctl start mysql`
 
-
-`mysql -u root -p`
-
-
-`CREATE DATABASE IF NOT EXISTS logsnatch;`
-
-
-`exit;`
-
 `mysql -u root -p < db_struct/user_credDB.sql`
 
 ### For this part, keep 3 terminal windows open
