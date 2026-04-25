@@ -64,6 +64,20 @@ function validateToken(req, res, next) {
 
 function triggerScan(scanName) {
     try {
+        // Special handling for envcheck since it doesn't have a systemd service
+        if (scanName === 'envcheck') {
+            const { execSync } = require('child_process');
+            try {
+                // Run the script directly and capture output to /tmp
+                const outputFile = `/tmp/scan-envcheck-${new Date().toISOString()}.log`;
+                execSync(`OUTPUT_FILE="${outputFile}" /home/cs-admin/DND-node-root/final-test/cs499-logsnatch/shell-tools/logsnatch-envcheck.sh`);
+                return;
+            } catch (execErr) {
+                console.error(`Error executing envcheck script:`, execErr);
+                throw execErr;
+            }
+        }
+        
         const triggerFile = `/var/lib/logsnatch/${scanName}-trigger`;
         
         // Try multiple methods to trigger the scan
@@ -98,7 +112,10 @@ function triggerScan(scanName) {
 
 function fetchResults(scanName) {
     return new Promise((resolve, reject) => {
-        fs.readdir(logDir, (err, files) => {
+        // For envcheck, look in /tmp since it doesn't require sudo
+        const searchDir = scanName === 'envcheck' ? '/tmp' : logDir;
+        
+        fs.readdir(searchDir, (err, files) => {
             if (err) return reject(err);
 
             // Filter files based on scan type
@@ -107,18 +124,20 @@ function fetchResults(scanName) {
                 filePrefix = 'scan-suid';
             } else if (scanName === 'ssh') {
                 filePrefix = 'scan-ssh';
+            } else if (scanName === 'envcheck') {
+                filePrefix = 'scan-envcheck';
             }
 
             const scanFiles = files.filter(file => file.startsWith(filePrefix) && file.endsWith('.log'));
             if (scanFiles.length === 0) return reject(new Error('No scan results found'));
 
             const latestFile = scanFiles.sort((a, b) => {
-                const statA = fs.statSync(path.join(logDir, a));
-                const statB = fs.statSync(path.join(logDir, b));
+                const statA = fs.statSync(path.join(searchDir, a));
+                const statB = fs.statSync(path.join(searchDir, b));
                 return statB.mtime.getTime() - statA.mtime.getTime();
             })[0];
 
-            fs.readFile(path.join(logDir, latestFile), 'utf8', (err, data) => {
+            fs.readFile(path.join(searchDir, latestFile), 'utf8', (err, data) => {
                 if (err) return reject(err);
                 resolve(data);
             });
@@ -271,6 +290,62 @@ function insertSUIDResults(scanData, userId, scanName) {
     });
 }
 
+function insertEnvCheckResults(scanData, userId, scanName) {
+    return new Promise((resolve, reject) => {
+        const scanSql = 'INSERT INTO scan_results (scanDateTime, scanPass, scanUser) VALUES (?, ?, ?)';
+        // Env check scan passes if no sensitive vars found, otherwise fails
+        try {
+            const envData = JSON.parse(scanData);
+            const hasSensitiveVars = Object.keys(envData.sensitive_environment_variables || {}).length > 0;
+            const scanValues = [new Date(), hasSensitiveVars ? 0 : 1, userId];
+
+            db.query(scanSql, scanValues, (err, result) => {
+                if (err) {
+                    console.error('Error inserting into scan_results:', err);
+                    return reject(err);
+                }
+
+                const scanId = result.insertId;
+                const logLocation = path.join(logDir, `scan-envcheck-${new Date().toISOString()}.log`);
+
+                if (hasSensitiveVars) {
+                    const sensitiveVars = envData.sensitive_environment_variables;
+                    let insertedCount = 0;
+                    const varCount = Object.keys(sensitiveVars).length;
+                    
+                    if (varCount === 0) {
+                        resolve({ success: true, scanId });
+                        return;
+                    }
+                    
+                    for (const [varName, varInfo] of Object.entries(sensitiveVars)) {
+                        const envSql = 'INSERT INTO results_envcheck (scanID, envVarName, envVarPattern, envVarValueMasked, envCheckLogLocation) VALUES (?, ?, ?, ?, ?)';
+                        const envValues = [scanId, varName, varInfo.pattern, varInfo.value, logLocation];
+                        
+                        db.query(envSql, envValues, (err) => {
+                            if (err) {
+                                console.error('Error inserting environment variable:', err);
+                                return reject(err);
+                            }
+                            insertedCount++;
+                            
+                            if (insertedCount === varCount) {
+                                resolve({ success: true, scanId });
+                            }
+                        });
+                    }
+                } else {
+                    resolve({ success: true, scanId });
+                }
+            });
+        } catch (parseErr) {
+            console.error('Error parsing environment check scan data:', parseErr);
+            console.error('Raw data:', scanData);
+            reject(parseErr);
+        }
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Auth routes
 // ---------------------------------------------------------------------------
@@ -363,6 +438,8 @@ app.post('/api/trigger-scan', validateToken, async (req, res) => {
                     dbResult = await insertSSHResults(results, userId, scanName);
                 } else if (scanName === 'suid') {
                     dbResult = await insertSUIDResults(results, userId, scanName);
+                } else if (scanName === 'envcheck') {
+                    dbResult = await insertEnvCheckResults(results, userId, scanName);
                 } else {
                     dbResult = await insertRTkitResults(results, userId, scanName);
                 }

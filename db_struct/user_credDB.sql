@@ -78,5 +78,18 @@ CREATE TABLE IF NOT EXISTS `results_suid` (
   CONSTRAINT `fk_suidid` FOREIGN KEY (`scanID`) REFERENCES `scan_results` (`scanID`)
 );
 
+CREATE TABLE IF NOT EXISTS `results_envcheck` (
+  `rID` int NOT NULL AUTO_INCREMENT,
+  `scanID` int DEFAULT NULL,
+  `envVarName` varchar(100) NOT NULL,
+  `envVarPattern` varchar(20) NOT NULL,
+  `envVarValueMasked` varchar(50) NOT NULL,
+  `envCheckLogLocation` varchar(255) NOT NULL,
+  PRIMARY KEY (`rID`),
+  UNIQUE KEY `rID_UNIQUE` (`rID`),
+  KEY `fk_envcheckid_idx` (`scanID`),
+  CONSTRAINT `fk_envcheckid` FOREIGN KEY (`scanID`) REFERENCES `scan_results` (`scanID`)
+);
+
 
 
