@@ -458,14 +458,14 @@ app.get('/api/scan-table', validateToken, (req, res) => {
             sr.scanPass,
             uc.username AS scanUser,
             CASE
-                WHEN rt.scanID  IS NOT NULL THEN 'Rootkit'
-                WHEN ssh.scanID IS NOT NULL THEN 'SSH'
-                WHEN su.scanID  IS NOT NULL THEN 'SUID'
-                WHEN ev.scanID  IS NOT NULL THEN 'EnvCheck'
+                WHEN MAX(rt.scanID)  IS NOT NULL THEN 'Rootkit'
+                WHEN MAX(ssh.scanID) IS NOT NULL THEN 'SSH'
+                WHEN MAX(su.scanID)  IS NOT NULL THEN 'SUID'
+                WHEN MAX(ev.scanID)  IS NOT NULL THEN 'EnvCheck'
                 ELSE 'General'
             END AS scanType,
-            COALESCE(rt.rtkitLogLocation, ssh.sshViolationLogLocation,
-                     su.suidLogLocation, ev.envCheckLogLocation, 'N/A') AS logLocation,
+            COALESCE(MAX(rt.rtkitLogLocation), MAX(ssh.sshViolationLogLocation),
+                     MAX(su.suidLogLocation), MAX(ev.envCheckLogLocation), 'N/A') AS logLocation,
             (
                 SELECT COUNT(*) FROM results_rtkit    WHERE scanID = sr.scanID
             ) + (
