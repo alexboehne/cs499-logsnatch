@@ -13,7 +13,7 @@ app.use(express.json());
 
 // MySQL Database Connection
 const db = mysql.createConnection({
-    host: 'localhost',
+    host: '127.0.0.1',
     user: 'root',
     password: 'DONTBREAKIn25!',
     database: 'logsnatch',
@@ -33,12 +33,10 @@ const logDir = '/var/log';
 
 // ---------------------------------------------------------------------------
 // Token validation middleware
-// Expects header:  Authorization: Bearer <token>
-// Rejects if token is missing, not in DB, or past its expires_at timestamp.
 // ---------------------------------------------------------------------------
 function validateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // "Bearer <token>"
+    const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
         return res.status(401).json({ success: false, error: 'No token provided' });
@@ -53,22 +51,20 @@ function validateToken(req, res, next) {
         if (results.length === 0) {
             return res.status(401).json({ success: false, error: 'Invalid or expired token' });
         }
-        req.uid = results[0].uid; // attach uid for use in downstream handlers
+        req.uid = results[0].uid;
         next();
     });
 }
 
 // ---------------------------------------------------------------------------
-// Scan helpers (unchanged)
+// Scan helpers
 // ---------------------------------------------------------------------------
 
 function triggerScan(scanName) {
     try {
-        // Special handling for envcheck since it doesn't have a systemd service
         if (scanName === 'envcheck') {
             const { execSync } = require('child_process');
             try {
-                // Run the script directly and capture output to /tmp
                 const outputFile = `/tmp/scan-envcheck-${new Date().toISOString()}.log`;
                 execSync(`OUTPUT_FILE="${outputFile}" /home/cs-admin/DND-node-root/final-test/cs499-logsnatch/shell-tools/logsnatch-envcheck.sh`);
                 return;
@@ -77,29 +73,22 @@ function triggerScan(scanName) {
                 throw execErr;
             }
         }
-        
+
         const triggerFile = `/var/lib/logsnatch/${scanName}-trigger`;
-        
-        // Try multiple methods to trigger the scan
+
         try {
-            // Method 1: Update timestamp (preferred)
             fs.utimesSync(triggerFile, new Date(), new Date());
         } catch (utimesErr) {
             try {
-                // Method 2: Append and truncate
                 fs.appendFileSync(triggerFile, '\n');
                 fs.truncateSync(triggerFile, 0);
             } catch (appendErr) {
-                // Method 3: Create a temporary trigger file that systemd can watch
                 const tempTriggerFile = `/tmp/${scanName}-trigger-temp`;
                 fs.writeFileSync(tempTriggerFile, 'trigger');
-                
-                // Copy to the actual location if possible
                 try {
                     fs.copyFileSync(tempTriggerFile, triggerFile);
                     fs.unlinkSync(tempTriggerFile);
                 } catch (copyErr) {
-                    // If we can't copy, leave the temp file and hope systemd can see it
                     console.warn(`Could not copy trigger file, leaving temp file at ${tempTriggerFile}`);
                 }
             }
@@ -112,13 +101,11 @@ function triggerScan(scanName) {
 
 function fetchResults(scanName) {
     return new Promise((resolve, reject) => {
-        // For envcheck, look in /tmp since it doesn't require sudo
         const searchDir = scanName === 'envcheck' ? '/tmp' : logDir;
-        
+
         fs.readdir(searchDir, (err, files) => {
             if (err) return reject(err);
 
-            // Filter files based on scan type
             let filePrefix = 'scan_results';
             if (scanName === 'suid') {
                 filePrefix = 'scan-suid';
@@ -145,11 +132,10 @@ function fetchResults(scanName) {
     });
 }
 
-function insertRTkitResults(scanData, userId, scanName) {
+function insertRTkitResults(scanData, userId) {
     return new Promise((resolve, reject) => {
         try {
             const scanSql = 'INSERT INTO scan_results (scanDateTime, scanPass, scanUser) VALUES (?, ?, ?)';
-            // Parse the JSON to check for infections
             const scanDataObj = JSON.parse(scanData);
             const hasInfections = scanDataObj.results && scanDataObj.results.includes('INFECTED');
             const scanValues = [new Date(), hasInfections ? 0 : 1, userId];
@@ -165,13 +151,8 @@ function insertRTkitResults(scanData, userId, scanName) {
 
                 if (hasInfections) {
                     const rtkitSql = 'INSERT INTO results_rtkit (scanID, rtkitInfectedProgram, rtkitLogLocation) VALUES (?, ?, ?)';
-                    const rtkitValues = [scanId, scanDataObj.results, logLocation];
-
-                    db.query(rtkitSql, rtkitValues, (err) => {
-                        if (err) {
-                            console.error('Error inserting into results_rtkit:', err);
-                            return reject(err);
-                        }
+                    db.query(rtkitSql, [scanId, scanDataObj.results, logLocation], (err) => {
+                        if (err) return reject(err);
                         resolve({ success: true, scanId });
                     });
                 } else {
@@ -179,40 +160,28 @@ function insertRTkitResults(scanData, userId, scanName) {
                 }
             });
         } catch (parseErr) {
-            console.error('Error parsing rootkit scan data:', parseErr);
-            console.error('Raw data:', scanData);
             reject(parseErr);
         }
     });
 }
 
-function insertSSHResults(scanData, userId, scanName) {
+function insertSSHResults(scanData, userId) {
     return new Promise((resolve, reject) => {
         try {
             const scanSql = 'INSERT INTO scan_results (scanDateTime, scanPass, scanUser) VALUES (?, ?, ?)';
-            // SSH scan passes if no violations are found
             const hasViolations = Object.keys(JSON.parse(scanData)).length > 0;
             const scanValues = [new Date(), hasViolations ? 0 : 1, userId];
 
             db.query(scanSql, scanValues, (err, result) => {
-                if (err) {
-                    console.error('Error inserting into scan_results:', err);
-                    return reject(err);
-                }
+                if (err) return reject(err);
 
                 const scanId = result.insertId;
                 const logLocation = path.join(logDir, `scan-ssh-${new Date().toISOString()}.log`);
 
                 if (hasViolations) {
                     const sshSql = 'INSERT INTO results_ssh (scanID, sshViolation, sshViolationLogLocation) VALUES (?, ?, ?)';
-                    const sshValues = [scanId, scanData, logLocation];
-
-                    db.query(sshSql, sshValues, (err) => {
-                        if (err) {
-                            console.error('Error inserting into results_ssh:', err);
-                            console.error('SSH values:', sshValues);
-                            return reject(err);
-                        }
+                    db.query(sshSql, [scanId, scanData, logLocation], (err) => {
+                        if (err) return reject(err);
                         resolve({ success: true, scanId });
                     });
                 } else {
@@ -220,127 +189,85 @@ function insertSSHResults(scanData, userId, scanName) {
                 }
             });
         } catch (parseErr) {
-            console.error('Error parsing SSH scan data:', parseErr);
-            console.error('Raw data:', scanData);
             reject(parseErr);
         }
     });
 }
 
-function insertSUIDResults(scanData, userId, scanName) {
+function insertSUIDResults(scanData, userId) {
     return new Promise((resolve, reject) => {
         const scanSql = 'INSERT INTO scan_results (scanDateTime, scanPass, scanUser) VALUES (?, ?, ?)';
-        // SUID scan always passes (just reports files), so scanPass = 1
-        const scanValues = [new Date(), 1, userId];
-
-        db.query(scanSql, scanValues, (err, result) => {
-            if (err) {
-                console.error('Error inserting into scan_results:', err);
-                return reject(err);
-            }
+        db.query(scanSql, [new Date(), 1, userId], (err, result) => {
+            if (err) return reject(err);
 
             const scanId = result.insertId;
             const logLocation = path.join(logDir, `scan-suid-${new Date().toISOString()}.log`);
 
-            // Parse the JSON data from the scan
             try {
-                // Handle malformed JSON that's missing outer braces
                 let suidFiles;
                 if (scanData.trim().startsWith('{')) {
-                    // Normal JSON format
                     suidFiles = JSON.parse(scanData);
                 } else {
-                    // Malformed format - wrap with braces
-                    const wrappedData = `{${scanData}}`;
-                    suidFiles = JSON.parse(wrappedData);
+                    suidFiles = JSON.parse(`{${scanData}}`);
                 }
-                
-                // Insert each SUID file found - simplified version
-                let insertedCount = 0;
+
                 const fileCount = Object.keys(suidFiles).length;
-                
                 if (fileCount === 0) {
                     resolve({ success: true, scanId });
                     return;
                 }
-                
+
+                let insertedCount = 0;
                 for (const [filePath, fileInfo] of Object.entries(suidFiles)) {
                     const suidSql = 'INSERT INTO results_suid (scanID, suidPath, suidPermissions, suidOwner, suidGroup, suidLogLocation) VALUES (?, ?, ?, ?, ?, ?)';
-                    const suidValues = [scanId, filePath, fileInfo.permissions, fileInfo.owner, fileInfo.group, logLocation];
-                    
-                    db.query(suidSql, suidValues, (err) => {
-                        if (err) {
-                            console.error('Error inserting SUID file:', err);
-                            return reject(err);
-                        }
+                    db.query(suidSql, [scanId, filePath, fileInfo.permissions, fileInfo.owner, fileInfo.group, logLocation], (err) => {
+                        if (err) return reject(err);
                         insertedCount++;
-                        
-                        // Resolve when all files are inserted
-                        if (insertedCount === fileCount) {
-                            resolve({ success: true, scanId });
-                        }
+                        if (insertedCount === fileCount) resolve({ success: true, scanId });
                     });
                 }
             } catch (parseErr) {
-                console.error('Error parsing SUID scan data:', parseErr);
-                console.error('Raw data preview:', scanData.substring(0, 200));
                 reject(parseErr);
             }
         });
     });
 }
 
-function insertEnvCheckResults(scanData, userId, scanName) {
+function insertEnvCheckResults(scanData, userId) {
     return new Promise((resolve, reject) => {
-        const scanSql = 'INSERT INTO scan_results (scanDateTime, scanPass, scanUser) VALUES (?, ?, ?)';
-        // Env check scan passes if no sensitive vars found, otherwise fails
         try {
             const envData = JSON.parse(scanData);
             const hasSensitiveVars = Object.keys(envData.sensitive_environment_variables || {}).length > 0;
-            const scanValues = [new Date(), hasSensitiveVars ? 0 : 1, userId];
 
-            db.query(scanSql, scanValues, (err, result) => {
-                if (err) {
-                    console.error('Error inserting into scan_results:', err);
-                    return reject(err);
-                }
+            db.query(
+                'INSERT INTO scan_results (scanDateTime, scanPass, scanUser) VALUES (?, ?, ?)',
+                [new Date(), hasSensitiveVars ? 0 : 1, userId],
+                (err, result) => {
+                    if (err) return reject(err);
 
-                const scanId = result.insertId;
-                const logLocation = path.join(logDir, `scan-envcheck-${new Date().toISOString()}.log`);
+                    const scanId = result.insertId;
+                    const logLocation = path.join(logDir, `scan-envcheck-${new Date().toISOString()}.log`);
 
-                if (hasSensitiveVars) {
-                    const sensitiveVars = envData.sensitive_environment_variables;
-                    let insertedCount = 0;
-                    const varCount = Object.keys(sensitiveVars).length;
-                    
-                    if (varCount === 0) {
+                    if (!hasSensitiveVars) {
                         resolve({ success: true, scanId });
                         return;
                     }
-                    
+
+                    const sensitiveVars = envData.sensitive_environment_variables;
+                    const varCount = Object.keys(sensitiveVars).length;
+                    let insertedCount = 0;
+
                     for (const [varName, varInfo] of Object.entries(sensitiveVars)) {
                         const envSql = 'INSERT INTO results_envcheck (scanID, envVarName, envVarPattern, envVarValueMasked, envCheckLogLocation) VALUES (?, ?, ?, ?, ?)';
-                        const envValues = [scanId, varName, varInfo.pattern, varInfo.value, logLocation];
-                        
-                        db.query(envSql, envValues, (err) => {
-                            if (err) {
-                                console.error('Error inserting environment variable:', err);
-                                return reject(err);
-                            }
+                        db.query(envSql, [scanId, varName, varInfo.pattern, varInfo.value, logLocation], (err) => {
+                            if (err) return reject(err);
                             insertedCount++;
-                            
-                            if (insertedCount === varCount) {
-                                resolve({ success: true, scanId });
-                            }
+                            if (insertedCount === varCount) resolve({ success: true, scanId });
                         });
                     }
-                } else {
-                    resolve({ success: true, scanId });
                 }
-            });
+            );
         } catch (parseErr) {
-            console.error('Error parsing environment check scan data:', parseErr);
-            console.error('Raw data:', scanData);
             reject(parseErr);
         }
     });
@@ -354,24 +281,15 @@ app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
     const hashedPass = crypto.createHash('md5').update(password).digest('hex');
 
-    const sql = 'SELECT uid, username FROM user_creds WHERE username = ? AND md5_pass = ?';
-
-    db.query(sql, [username, hashedPass], (err, results) => {
-        if (err) {
-            console.error(err);
-            return res.status(500).json({ success: false, error: 'Server error' });
-        }
+    db.query('SELECT uid, username FROM user_creds WHERE username = ? AND md5_pass = ?', [username, hashedPass], (err, results) => {
+        if (err) return res.status(500).json({ success: false, error: 'Server error' });
 
         if (results.length > 0) {
             const token = crypto.randomBytes(32).toString('hex');
-            const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000); // 8 hours from now
+            const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
 
-            const sessionSql = 'INSERT INTO user_sessions (uid, token, expires_at) VALUES (?, ?, ?)';
-            db.query(sessionSql, [results[0].uid, token, expiresAt], (err) => {
-                if (err) {
-                    console.error('Error saving session token:', err);
-                    return res.status(500).json({ success: false, error: 'Server error' });
-                }
+            db.query('INSERT INTO user_sessions (uid, token, expires_at) VALUES (?, ?, ?)', [results[0].uid, token, expiresAt], (err) => {
+                if (err) return res.status(500).json({ success: false, error: 'Server error' });
                 res.json({ success: true, message: 'Login successful', user: results[0], token });
             });
         } else {
@@ -383,30 +301,27 @@ app.post('/api/login', (req, res) => {
 app.post('/api/logout', validateToken, (req, res) => {
     const token = req.headers['authorization'].split(' ')[1];
     db.query('DELETE FROM user_sessions WHERE token = ?', [token], (err) => {
-        if (err) {
-            console.error('Error deleting session:', err);
-            return res.status(500).json({ success: false, error: 'Server error' });
-        }
+        if (err) return res.status(500).json({ success: false, error: 'Server error' });
         res.json({ success: true, message: 'Logged out successfully' });
     });
 });
 
-// Used by the dashboard on load to confirm the token is still valid
 app.get('/api/validate-token', validateToken, (req, res) => {
     res.json({ success: true });
+});
+
+// Returns the uid for the currently authenticated token — used as fallback
+// if localStorage.authUid is missing (e.g. existing sessions before the update).
+app.get('/api/me', validateToken, (req, res) => {
+    res.json({ success: true, uid: req.uid });
 });
 
 app.post('/api/createUser', (req, res) => {
     const { username, password } = req.body;
     const hashedPass = crypto.createHash('md5').update(password).digest('hex');
 
-    const sql = 'INSERT INTO user_creds (username, md5_pass) VALUES (?, ?)';
-
-    db.query(sql, [username, hashedPass], (err, results) => {
-        if (err) {
-            console.error(err);
-            return res.status(500).json({ success: false, error: 'Server error' });
-        }
+    db.query('INSERT INTO user_creds (username, md5_pass) VALUES (?, ?)', [username, hashedPass], (err, results) => {
+        if (err) return res.status(500).json({ success: false, error: 'Server error' });
 
         if (results.affectedRows > 0) {
             res.json({ success: true, message: 'User added', userID: results.insertId, username: username });
@@ -417,7 +332,7 @@ app.post('/api/createUser', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Protected scan routes — validateToken middleware runs first
+// Protected scan routes
 // ---------------------------------------------------------------------------
 
 app.post('/api/trigger-scan', validateToken, async (req, res) => {
@@ -435,16 +350,16 @@ app.post('/api/trigger-scan', validateToken, async (req, res) => {
                 let dbResult;
 
                 if (scanName === 'ssh') {
-                    dbResult = await insertSSHResults(results, userId, scanName);
+                    dbResult = await insertSSHResults(results, userId);
                 } else if (scanName === 'suid') {
-                    dbResult = await insertSUIDResults(results, userId, scanName);
+                    dbResult = await insertSUIDResults(results, userId);
                 } else if (scanName === 'envcheck') {
-                    dbResult = await insertEnvCheckResults(results, userId, scanName);
+                    dbResult = await insertEnvCheckResults(results, userId);
                 } else {
-                    dbResult = await insertRTkitResults(results, userId, scanName);
+                    dbResult = await insertRTkitResults(results, userId);
                 }
 
-                res.status(200).json({ success: true, message: 'Scan triggered and results stored', results: results.substring(0, 100) + '...', dbResult });
+                res.status(200).json({ success: true, message: 'Scan triggered and results stored', dbResult });
             } catch (err) {
                 console.error('Error processing scan results:', err);
                 res.status(500).json({ success: false, error: 'Error processing scan results' });
@@ -461,34 +376,24 @@ app.get('/api/fetch-results', validateToken, async (req, res) => {
         const results = await fetchResults();
         res.status(200).json({ success: true, results });
     } catch (err) {
-        console.error('Error fetching results:', err);
         res.status(500).json({ success: false, error: 'Error fetching results' });
     }
 });
 
 // ---------------------------------------------------------------------------
 // Dashboard charts endpoint
-// Returns:
-//   barChart  — scans per day for the last 7 days (count of scan_results rows)
-//   pieChart  — number of violations per scan type across all time
-//               rtkit  → results_rtkit
-//               ssh    → results_ssh
-//               suid   → results_suid
-//               envcheck → results_envcheck
 // ---------------------------------------------------------------------------
 app.get('/api/dashboard-charts', validateToken, (req, res) => {
-    // --- Bar chart: scans per day, last 7 days ---
     const barSql = `
         SELECT
-            DATE(scanDateTIme) AS day,
+            DATE(scanDateTime) AS day,
             COUNT(*)           AS total
         FROM scan_results
-        WHERE scanDateTIme >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
-        GROUP BY DATE(scanDateTIme)
+        WHERE scanDateTime >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+        GROUP BY DATE(scanDateTime)
         ORDER BY day ASC
     `;
 
-    // --- Pie chart: violation counts by scan type ---
     const pieSql = `
         SELECT 'Rootkit'  AS label, COUNT(*) AS total FROM results_rtkit
         UNION ALL
@@ -511,13 +416,12 @@ app.get('/api/dashboard-charts', validateToken, (req, res) => {
                 return res.status(500).json({ success: false, error: 'Error fetching chart data' });
             }
 
-            // Build a full 7-day label set so days with zero scans still appear
             const dayLabels = [];
             const dayTotals = [];
             for (let i = 6; i >= 0; i--) {
                 const d = new Date();
                 d.setDate(d.getDate() - i);
-                const label = d.toLocaleDateString('en-US', { weekday: 'short' }); // e.g. "Mon"
+                const label = d.toLocaleDateString('en-US', { weekday: 'short' });
                 const iso   = d.toISOString().slice(0, 10);
                 const match = barRows.find(r => r.day.toISOString().slice(0, 10) === iso);
                 dayLabels.push(label);
@@ -528,10 +432,7 @@ app.get('/api/dashboard-charts', validateToken, (req, res) => {
                 success: true,
                 barChart: {
                     labels: dayLabels,
-                    datasets: {
-                        label: 'Scans Per Day',
-                        data: dayTotals,
-                    },
+                    datasets: { label: 'Scans Per Day', data: dayTotals },
                 },
                 pieChart: {
                     labels: pieRows.map(r => r.label),
@@ -548,48 +449,40 @@ app.get('/api/dashboard-charts', validateToken, (req, res) => {
 
 // ---------------------------------------------------------------------------
 // Scan table endpoint
-// Returns all rows from scan_results, newest first, with the username of
-// the user who triggered the scan.  Log location is reconstructed from the
-// scan type column (not stored directly in scan_results, so we derive it from
-// which detail table has a matching scanID).
 // ---------------------------------------------------------------------------
 app.get('/api/scan-table', validateToken, (req, res) => {
     const sql = `
         SELECT
             sr.scanID,
-            sr.scanDateTIme   AS scanDateTime,
+            sr.scanDateTime,
             sr.scanPass,
-            uc.username       AS scanUser,
-            -- derive a human-readable scan type by checking which detail table
-            -- has a record for this scanID (LEFT JOINs; first non-null wins in app)
+            uc.username AS scanUser,
             CASE
-                WHEN rt.scanID IS NOT NULL THEN 'Rootkit'
+                WHEN rt.scanID  IS NOT NULL THEN 'Rootkit'
                 WHEN ssh.scanID IS NOT NULL THEN 'SSH'
-                WHEN su.scanID IS NOT NULL THEN 'SUID'
-                WHEN ev.scanID IS NOT NULL THEN 'EnvCheck'
+                WHEN su.scanID  IS NOT NULL THEN 'SUID'
+                WHEN ev.scanID  IS NOT NULL THEN 'EnvCheck'
                 ELSE 'General'
             END AS scanType,
-            -- use the log location from whichever detail table matched
             COALESCE(rt.rtkitLogLocation, ssh.sshViolationLogLocation,
                      su.suidLogLocation, ev.envCheckLogLocation, 'N/A') AS logLocation,
-            -- count violations attached to this scan
             (
-                SELECT COUNT(*) FROM results_rtkit  WHERE scanID = sr.scanID
+                SELECT COUNT(*) FROM results_rtkit    WHERE scanID = sr.scanID
             ) + (
-                SELECT COUNT(*) FROM results_ssh    WHERE scanID = sr.scanID
+                SELECT COUNT(*) FROM results_ssh      WHERE scanID = sr.scanID
             ) + (
-                SELECT COUNT(*) FROM results_suid   WHERE scanID = sr.scanID
+                SELECT COUNT(*) FROM results_suid     WHERE scanID = sr.scanID
             ) + (
                 SELECT COUNT(*) FROM results_envcheck WHERE scanID = sr.scanID
             ) AS warningCount
         FROM scan_results sr
-        LEFT JOIN user_creds uc ON uc.uid = sr.scanUser
+        LEFT JOIN user_creds    uc  ON uc.uid    = sr.scanUser
         LEFT JOIN results_rtkit   rt  ON rt.scanID  = sr.scanID
         LEFT JOIN results_ssh     ssh ON ssh.scanID = sr.scanID
         LEFT JOIN results_suid    su  ON su.scanID  = sr.scanID
         LEFT JOIN results_envcheck ev ON ev.scanID  = sr.scanID
         GROUP BY sr.scanID
-        ORDER BY sr.scanDateTIme DESC
+        ORDER BY sr.scanDateTime DESC
         LIMIT 100
     `;
 
@@ -599,34 +492,65 @@ app.get('/api/scan-table', validateToken, (req, res) => {
             return res.status(500).json({ success: false, error: 'Error fetching scan data' });
         }
 
-        const scans = rows.map(r => ({
-            scanID:       r.scanID,
-            scanDateTime: r.scanDateTime,
-            scanPass:     r.scanPass,
-            scanUser:     r.scanUser || 'Unknown',
-            scanType:     r.scanType,
-            logLocation:  r.logLocation,
-            warningCount: Number(r.warningCount),
-        }));
-
-        res.json({ success: true, scans });
+        res.json({
+            success: true,
+            scans: rows.map(r => ({
+                scanID:       r.scanID,
+                scanDateTime: r.scanDateTime,
+                scanPass:     r.scanPass,
+                scanUser:     r.scanUser || 'Unknown',
+                scanType:     r.scanType,
+                logLocation:  r.logLocation,
+                warningCount: Number(r.warningCount),
+            })),
+        });
     });
 });
 
 // ---------------------------------------------------------------------------
-// Warnings table endpoint — returns rootkit violations (results_rtkit)
-// joined to their parent scan so we have a timestamp and log location.
+// Warnings table endpoint — all violation types joined to their scan row
 // ---------------------------------------------------------------------------
 app.get('/api/warnings-table', validateToken, (req, res) => {
     const sql = `
         SELECT
-            rt.rID,
-            sr.scanDateTIme        AS warningTime,
-            rt.rtkitInfectedProgram AS warningMessage,
+            sr.scanDateTime  AS warningTime,
+            'Rootkit'        AS scanType,
+            rt.rtkitInfectedProgram AS detail,
             rt.rtkitLogLocation     AS logLocation
         FROM results_rtkit rt
         JOIN scan_results sr ON sr.scanID = rt.scanID
-        ORDER BY sr.scanDateTIme DESC
+
+        UNION ALL
+
+        SELECT
+            sr.scanDateTime,
+            'SSH',
+            ssh.sshViolation,
+            ssh.sshViolationLogLocation
+        FROM results_ssh ssh
+        JOIN scan_results sr ON sr.scanID = ssh.scanID
+
+        UNION ALL
+
+        SELECT
+            sr.scanDateTime,
+            'SUID',
+            CONCAT(su.suidPath, ' (', su.suidPermissions, ' ', su.suidOwner, ')'),
+            su.suidLogLocation
+        FROM results_suid su
+        JOIN scan_results sr ON sr.scanID = su.scanID
+
+        UNION ALL
+
+        SELECT
+            sr.scanDateTime,
+            'EnvCheck',
+            CONCAT(ev.envVarName, ' matched pattern: ', ev.envVarPattern, ' value: ', ev.envVarValueMasked),
+            ev.envCheckLogLocation
+        FROM results_envcheck ev
+        JOIN scan_results sr ON sr.scanID = ev.scanID
+
+        ORDER BY warningTime DESC
         LIMIT 200
     `;
 
@@ -636,14 +560,15 @@ app.get('/api/warnings-table', validateToken, (req, res) => {
             return res.status(500).json({ success: false, error: 'Error fetching warnings data' });
         }
 
-        const warnings = rows.map(r => ({
-            rID:            r.rID,
-            warningTime:    r.warningTime,
-            warningMessage: r.warningMessage,
-            logLocation:    r.logLocation,
-        }));
-
-        res.json({ success: true, warnings });
+        res.json({
+            success: true,
+            warnings: rows.map(r => ({
+                warningTime: r.warningTime,
+                scanType:    r.scanType,
+                detail:      r.detail,
+                logLocation: r.logLocation,
+            })),
+        });
     });
 });
 
