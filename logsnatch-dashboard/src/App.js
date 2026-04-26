@@ -112,47 +112,46 @@ export default function App() {
 
   // Token validation: pick up token from URL on first load, then verify it
   // server-side. Expired or missing tokens redirect back to the login app.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const urlToken = params.get("token");
-    const storedToken = localStorage.getItem("authToken");
-    const token = urlToken || storedToken;
+  //now it has the authUid
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+  const urlToken = params.get("token");
+  const storedToken = localStorage.getItem("authToken");
+  const token = urlToken || storedToken;
 
-    if (!token) {
-      window.location.href = "http://localhost:3000";
-      return;
-    }
+  if (!token) {
+    window.location.href = "http://localhost:3000";
+    return;
+  }
 
-    // Persist whichever token we resolved
-    localStorage.setItem("authToken", token);
+  localStorage.setItem("authToken", token);
 
-    // Remove the token from the URL bar without triggering a reload
-    if (urlToken) {
-      const cleanUrl = window.location.pathname;
-      window.history.replaceState({}, document.title, cleanUrl);
-    }
+  if (urlToken) {
+    const cleanUrl = window.location.pathname;
+    window.history.replaceState({}, document.title, cleanUrl);
+  }
 
-    // Verify the token is still valid on the backend
-    fetch("http://localhost:5000/api/validate-token", {
-      method: "GET",
-      headers: {
-        Authorization: "Bearer " + token,
-      },
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (!data.success) {
-          localStorage.removeItem("authToken");
-          window.location.href = "http://localhost:3000";
-        } else {
-          setAuthChecked(true); // token is valid — allow render
-        }
-      })
-      .catch(() => {
+  fetch("http://localhost:5000/api/me", {
+    method: "GET",
+    headers: { Authorization: "Bearer " + token },
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      if (!data.success) {
         localStorage.removeItem("authToken");
+        localStorage.removeItem("authUid");
         window.location.href = "http://localhost:3000";
-      });
-  }, []);
+      } else {
+        localStorage.setItem("authUid", data.uid);
+        setAuthChecked(true);
+      }
+    })
+    .catch(() => {
+      localStorage.removeItem("authToken");
+      localStorage.removeItem("authUid");
+      window.location.href = "http://localhost:3000";
+    });
+}, []);
 
   const getRoutes = (allRoutes) =>
     allRoutes.map((route) => {
