@@ -114,6 +114,8 @@ function fetchResults(scanName) {
                 filePrefix = 'scan-ssh';
             } else if (scanName === 'envcheck') {
                 filePrefix = 'scan-envcheck';
+            } else if (scanName === 'rootkit') {
+                filePrefix = 'scan-rtkit';
             }
 
             const scanFiles = files.filter(file => file.startsWith(filePrefix) && file.endsWith('.log'));
