@@ -1,62 +1,86 @@
 /* eslint-disable react/prop-types */
 /* eslint-disable react/function-component-definition */
-/**
-=========================================================
-* Material Dashboard 2 React - v2.2.0
-=========================================================
-
-* Product Page: https://www.creative-tim.com/product/material-dashboard-react
-* Copyright 2023 Creative Tim (https://www.creative-tim.com)
-
-Coded by www.creative-tim.com
-
- =========================================================
-
-* The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-*/
 
 // Material Dashboard 2 React components
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
-import MDAvatar from "components/MDAvatar";
 import MDBadge from "components/MDBadge";
 
-// Images
-import team2 from "assets/images/team-2.jpg";
-import team3 from "assets/images/team-3.jpg";
-import team4 from "assets/images/team-4.jpg";
+// Accepts an array of scan row objects returned from /api/scan-table.
+// Each object has: scanID, scanDateTime, scanPass, scanUser, scanType,
+//                  logLocation, warningCount
+export default function data(scanRows = []) {
+  const ScanResult = ({ passed }) => (
+    <MDBadge
+      badgeContent={passed ? "Pass" : "Fail"}
+      color={passed ? "success" : "error"}
+      variant="gradient"
+      size="sm"
+    />
+  );
 
-export default function data() {
-  const Author = ({ image, name, email }) => (
-    <MDBox display="flex" alignItems="center" lineHeight={1}>
-      <MDAvatar src={image} name={name} size="sm" />
-      <MDBox ml={2} lineHeight={1}>
-        <MDTypography display="block" variant="button" fontWeight="medium">
-          {name}
+  const rows = scanRows.map((scan) => {
+    const dt = scan.scanDateTime ? new Date(scan.scanDateTime) : null;
+    const formattedDate = dt
+      ? dt.toLocaleString("en-US", {
+          month: "short",
+          day: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      : "N/A";
+
+    // Derive a rough scan duration label — not stored in DB, so we show scan type instead
+    const scanDurationLabel = scan.scanType || "—";
+
+    return {
+      "Scan Start Time": (
+        <MDTypography variant="caption" color="text" fontWeight="medium">
+          {formattedDate}
         </MDTypography>
-        <MDTypography variant="caption">{email}</MDTypography>
-      </MDBox>
-    </MDBox>
-  );
-
-  const Job = ({ title, description }) => (
-    <MDBox lineHeight={1} textAlign="left">
-      <MDTypography display="block" variant="caption" color="text" fontWeight="medium">
-        {title}
-      </MDTypography>
-      <MDTypography variant="caption">{description}</MDTypography>
-    </MDBox>
-  );
+      ),
+      "Scan Duration": (
+        <MDTypography variant="caption" color="text" fontWeight="medium">
+          {scanDurationLabel}
+        </MDTypography>
+      ),
+      "Scan Results": <ScanResult passed={Boolean(scan.scanPass)} />,
+      Warnings: (
+        <MDTypography variant="caption" color="text" fontWeight="medium">
+          {scan.warningCount}
+        </MDTypography>
+      ),
+      "Log Location": (
+        <MDTypography
+          component="span"
+          variant="caption"
+          color="text"
+          fontWeight="medium"
+          sx={{
+            maxWidth: "200px",
+            display: "inline-block",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={scan.logLocation}
+        >
+          {scan.logLocation || "N/A"}
+        </MDTypography>
+      ),
+    };
+  });
 
   return {
     columns: [
-      { Header: "Scan Start Time", accessor: "Scan Start Time", width: "45%", align: "left" },
+      { Header: "Scan Start Time", accessor: "Scan Start Time", width: "25%", align: "left" },
       { Header: "Scan Duration", accessor: "Scan Duration", align: "left" },
       { Header: "Scan Results", accessor: "Scan Results", align: "center" },
       { Header: "Warnings", accessor: "Warnings", align: "center" },
       { Header: "Log Location", accessor: "Log Location", align: "center" },
     ],
-
-    rows: [],
+    rows,
   };
 }
