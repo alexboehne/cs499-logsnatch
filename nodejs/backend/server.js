@@ -467,6 +467,187 @@ app.get('/api/fetch-results', validateToken, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Dashboard charts endpoint
+// Returns:
+//   barChart  — scans per day for the last 7 days (count of scan_results rows)
+//   pieChart  — number of violations per scan type across all time
+//               rtkit  → results_rtkit
+//               ssh    → results_ssh
+//               suid   → results_suid
+//               envcheck → results_envcheck
+// ---------------------------------------------------------------------------
+app.get('/api/dashboard-charts', validateToken, (req, res) => {
+    // --- Bar chart: scans per day, last 7 days ---
+    const barSql = `
+        SELECT
+            DATE(scanDateTIme) AS day,
+            COUNT(*)           AS total
+        FROM scan_results
+        WHERE scanDateTIme >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+        GROUP BY DATE(scanDateTIme)
+        ORDER BY day ASC
+    `;
+
+    // --- Pie chart: violation counts by scan type ---
+    const pieSql = `
+        SELECT 'Rootkit'  AS label, COUNT(*) AS total FROM results_rtkit
+        UNION ALL
+        SELECT 'SSH'      AS label, COUNT(*) AS total FROM results_ssh
+        UNION ALL
+        SELECT 'SUID'     AS label, COUNT(*) AS total FROM results_suid
+        UNION ALL
+        SELECT 'EnvCheck' AS label, COUNT(*) AS total FROM results_envcheck
+    `;
+
+    db.query(barSql, (barErr, barRows) => {
+        if (barErr) {
+            console.error('Error fetching bar chart data:', barErr);
+            return res.status(500).json({ success: false, error: 'Error fetching chart data' });
+        }
+
+        db.query(pieSql, (pieErr, pieRows) => {
+            if (pieErr) {
+                console.error('Error fetching pie chart data:', pieErr);
+                return res.status(500).json({ success: false, error: 'Error fetching chart data' });
+            }
+
+            // Build a full 7-day label set so days with zero scans still appear
+            const dayLabels = [];
+            const dayTotals = [];
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const label = d.toLocaleDateString('en-US', { weekday: 'short' }); // e.g. "Mon"
+                const iso   = d.toISOString().slice(0, 10);
+                const match = barRows.find(r => r.day.toISOString().slice(0, 10) === iso);
+                dayLabels.push(label);
+                dayTotals.push(match ? Number(match.total) : 0);
+            }
+
+            res.json({
+                success: true,
+                barChart: {
+                    labels: dayLabels,
+                    datasets: {
+                        label: 'Scans Per Day',
+                        data: dayTotals,
+                    },
+                },
+                pieChart: {
+                    labels: pieRows.map(r => r.label),
+                    datasets: {
+                        label: 'Violations by Scan Type',
+                        backgroundColors: ['info', 'primary', 'dark', 'warning'],
+                        data: pieRows.map(r => Number(r.total)),
+                    },
+                },
+            });
+        });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Scan table endpoint
+// Returns all rows from scan_results, newest first, with the username of
+// the user who triggered the scan.  Log location is reconstructed from the
+// scan type column (not stored directly in scan_results, so we derive it from
+// which detail table has a matching scanID).
+// ---------------------------------------------------------------------------
+app.get('/api/scan-table', validateToken, (req, res) => {
+    const sql = `
+        SELECT
+            sr.scanID,
+            sr.scanDateTIme   AS scanDateTime,
+            sr.scanPass,
+            uc.username       AS scanUser,
+            -- derive a human-readable scan type by checking which detail table
+            -- has a record for this scanID (LEFT JOINs; first non-null wins in app)
+            CASE
+                WHEN rt.scanID IS NOT NULL THEN 'Rootkit'
+                WHEN ssh.scanID IS NOT NULL THEN 'SSH'
+                WHEN su.scanID IS NOT NULL THEN 'SUID'
+                WHEN ev.scanID IS NOT NULL THEN 'EnvCheck'
+                ELSE 'General'
+            END AS scanType,
+            -- use the log location from whichever detail table matched
+            COALESCE(rt.rtkitLogLocation, ssh.sshViolationLogLocation,
+                     su.suidLogLocation, ev.envCheckLogLocation, 'N/A') AS logLocation,
+            -- count violations attached to this scan
+            (
+                SELECT COUNT(*) FROM results_rtkit  WHERE scanID = sr.scanID
+            ) + (
+                SELECT COUNT(*) FROM results_ssh    WHERE scanID = sr.scanID
+            ) + (
+                SELECT COUNT(*) FROM results_suid   WHERE scanID = sr.scanID
+            ) + (
+                SELECT COUNT(*) FROM results_envcheck WHERE scanID = sr.scanID
+            ) AS warningCount
+        FROM scan_results sr
+        LEFT JOIN user_creds uc ON uc.uid = sr.scanUser
+        LEFT JOIN results_rtkit   rt  ON rt.scanID  = sr.scanID
+        LEFT JOIN results_ssh     ssh ON ssh.scanID = sr.scanID
+        LEFT JOIN results_suid    su  ON su.scanID  = sr.scanID
+        LEFT JOIN results_envcheck ev ON ev.scanID  = sr.scanID
+        GROUP BY sr.scanID
+        ORDER BY sr.scanDateTIme DESC
+        LIMIT 100
+    `;
+
+    db.query(sql, (err, rows) => {
+        if (err) {
+            console.error('Error fetching scan table:', err);
+            return res.status(500).json({ success: false, error: 'Error fetching scan data' });
+        }
+
+        const scans = rows.map(r => ({
+            scanID:       r.scanID,
+            scanDateTime: r.scanDateTime,
+            scanPass:     r.scanPass,
+            scanUser:     r.scanUser || 'Unknown',
+            scanType:     r.scanType,
+            logLocation:  r.logLocation,
+            warningCount: Number(r.warningCount),
+        }));
+
+        res.json({ success: true, scans });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Warnings table endpoint — returns rootkit violations (results_rtkit)
+// joined to their parent scan so we have a timestamp and log location.
+// ---------------------------------------------------------------------------
+app.get('/api/warnings-table', validateToken, (req, res) => {
+    const sql = `
+        SELECT
+            rt.rID,
+            sr.scanDateTIme        AS warningTime,
+            rt.rtkitInfectedProgram AS warningMessage,
+            rt.rtkitLogLocation     AS logLocation
+        FROM results_rtkit rt
+        JOIN scan_results sr ON sr.scanID = rt.scanID
+        ORDER BY sr.scanDateTIme DESC
+        LIMIT 200
+    `;
+
+    db.query(sql, (err, rows) => {
+        if (err) {
+            console.error('Error fetching warnings table:', err);
+            return res.status(500).json({ success: false, error: 'Error fetching warnings data' });
+        }
+
+        const warnings = rows.map(r => ({
+            rID:            r.rID,
+            warningTime:    r.warningTime,
+            warningMessage: r.warningMessage,
+            logLocation:    r.logLocation,
+        }));
+
+        res.json({ success: true, warnings });
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
 
