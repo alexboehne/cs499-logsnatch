@@ -66,6 +66,7 @@ function triggerScan(scanName) {
             const { execSync } = require('child_process');
             try {
                 const outputFile = `/tmp/scan-envcheck-${new Date().toISOString()}.log`;
+                //change the following line to the location of your logsnatch-envcheck.sh file
                 execSync(`OUTPUT_FILE="${outputFile}" /home/cs-admin/DND-node-root/final-test/cs499-logsnatch/shell-tools/logsnatch-envcheck.sh`);
                 return;
             } catch (execErr) {
