@@ -313,8 +313,7 @@ app.get('/api/validate-token', validateToken, (req, res) => {
     res.json({ success: true });
 });
 
-// Returns the uid for the currently authenticated token — used as fallback
-// if localStorage.authUid is missing (e.g. existing sessions before the update).
+// Returns the uid for the currently authenticated token
 app.get('/api/me', validateToken, (req, res) => {
     res.json({ success: true, uid: req.uid });
 });
@@ -384,36 +383,49 @@ app.get('/api/fetch-results', validateToken, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Dashboard charts endpoint
+// Dashboard charts endpoint — filtered by logged-in user
 // ---------------------------------------------------------------------------
 app.get('/api/dashboard-charts', validateToken, (req, res) => {
     const barSql = `
         SELECT
             DATE(scanDateTime) AS day,
-            COUNT(*)           AS total
+            COUNT(*) AS total
         FROM scan_results
         WHERE scanDateTime >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+        AND scanUser = ?
         GROUP BY DATE(scanDateTime)
         ORDER BY day ASC
     `;
 
     const pieSql = `
-        SELECT 'Rootkit'  AS label, COUNT(*) AS total FROM results_rtkit
+        SELECT 'Rootkit' AS label, COUNT(*) AS total
+        FROM results_rtkit rt
+        JOIN scan_results sr ON sr.scanID = rt.scanID
+        WHERE sr.scanUser = ?
         UNION ALL
-        SELECT 'SSH'      AS label, COUNT(*) AS total FROM results_ssh
+        SELECT 'SSH' AS label, COUNT(*) AS total
+        FROM results_ssh ssh
+        JOIN scan_results sr ON sr.scanID = ssh.scanID
+        WHERE sr.scanUser = ?
         UNION ALL
-        SELECT 'SUID'     AS label, COUNT(*) AS total FROM results_suid
+        SELECT 'SUID' AS label, COUNT(*) AS total
+        FROM results_suid su
+        JOIN scan_results sr ON sr.scanID = su.scanID
+        WHERE sr.scanUser = ?
         UNION ALL
-        SELECT 'EnvCheck' AS label, COUNT(*) AS total FROM results_envcheck
+        SELECT 'EnvCheck' AS label, COUNT(*) AS total
+        FROM results_envcheck ev
+        JOIN scan_results sr ON sr.scanID = ev.scanID
+        WHERE sr.scanUser = ?
     `;
 
-    db.query(barSql, (barErr, barRows) => {
+    db.query(barSql, [req.uid], (barErr, barRows) => {
         if (barErr) {
             console.error('Error fetching bar chart data:', barErr);
             return res.status(500).json({ success: false, error: 'Error fetching chart data' });
         }
 
-        db.query(pieSql, (pieErr, pieRows) => {
+        db.query(pieSql, [req.uid, req.uid, req.uid, req.uid], (pieErr, pieRows) => {
             if (pieErr) {
                 console.error('Error fetching pie chart data:', pieErr);
                 return res.status(500).json({ success: false, error: 'Error fetching chart data' });
@@ -425,7 +437,7 @@ app.get('/api/dashboard-charts', validateToken, (req, res) => {
                 const d = new Date();
                 d.setDate(d.getDate() - i);
                 const label = d.toLocaleDateString('en-US', { weekday: 'short' });
-                const iso   = d.toISOString().slice(0, 10);
+                const iso = d.toISOString().slice(0, 10);
                 const match = barRows.find(r => r.day.toISOString().slice(0, 10) === iso);
                 dayLabels.push(label);
                 dayTotals.push(match ? Number(match.total) : 0);
@@ -451,7 +463,7 @@ app.get('/api/dashboard-charts', validateToken, (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Scan table endpoint
+// Scan table endpoint — filtered by logged-in user
 // ---------------------------------------------------------------------------
 app.get('/api/scan-table', validateToken, (req, res) => {
     const sql = `
@@ -467,8 +479,13 @@ app.get('/api/scan-table', validateToken, (req, res) => {
                 WHEN MAX(ev.scanID)  IS NOT NULL THEN 'EnvCheck'
                 ELSE 'General'
             END AS scanType,
-            COALESCE(MAX(rt.rtkitLogLocation), MAX(ssh.sshViolationLogLocation),
-                     MAX(su.suidLogLocation), MAX(ev.envCheckLogLocation), 'N/A') AS logLocation,
+            COALESCE(
+                MAX(rt.rtkitLogLocation),
+                MAX(ssh.sshViolationLogLocation),
+                MAX(su.suidLogLocation),
+                MAX(ev.envCheckLogLocation),
+                'N/A'
+            ) AS logLocation,
             (
                 SELECT COUNT(*) FROM results_rtkit    WHERE scanID = sr.scanID
             ) + (
@@ -484,12 +501,13 @@ app.get('/api/scan-table', validateToken, (req, res) => {
         LEFT JOIN results_ssh     ssh ON ssh.scanID = sr.scanID
         LEFT JOIN results_suid    su  ON su.scanID  = sr.scanID
         LEFT JOIN results_envcheck ev ON ev.scanID  = sr.scanID
-        GROUP BY sr.scanID
+        WHERE sr.scanUser = ?
+        GROUP BY sr.scanID, sr.scanDateTime, sr.scanPass, uc.username
         ORDER BY sr.scanDateTime DESC
         LIMIT 100
     `;
 
-    db.query(sql, (err, rows) => {
+    db.query(sql, [req.uid], (err, rows) => {
         if (err) {
             console.error('Error fetching scan table:', err);
             return res.status(500).json({ success: false, error: 'Error fetching scan data' });
@@ -511,53 +529,47 @@ app.get('/api/scan-table', validateToken, (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Warnings table endpoint — all violation types joined to their scan row
+// Warnings table endpoint — filtered by logged-in user
 // ---------------------------------------------------------------------------
 app.get('/api/warnings-table', validateToken, (req, res) => {
     const sql = `
-        SELECT
-            sr.scanDateTime  AS warningTime,
-            'Rootkit'        AS scanType,
-            rt.rtkitInfectedProgram AS detail,
-            rt.rtkitLogLocation     AS logLocation
+        SELECT sr.scanDateTime AS warningTime, 'Rootkit' AS scanType,
+            rt.rtkitInfectedProgram AS detail, rt.rtkitLogLocation AS logLocation
         FROM results_rtkit rt
         JOIN scan_results sr ON sr.scanID = rt.scanID
+        WHERE sr.scanUser = ?
 
         UNION ALL
 
-        SELECT
-            sr.scanDateTime,
-            'SSH',
-            ssh.sshViolation,
-            ssh.sshViolationLogLocation
+        SELECT sr.scanDateTime, 'SSH',
+            ssh.sshViolation, ssh.sshViolationLogLocation
         FROM results_ssh ssh
         JOIN scan_results sr ON sr.scanID = ssh.scanID
+        WHERE sr.scanUser = ?
 
         UNION ALL
 
-        SELECT
-            sr.scanDateTime,
-            'SUID',
+        SELECT sr.scanDateTime, 'SUID',
             CONCAT(su.suidPath, ' (', su.suidPermissions, ' ', su.suidOwner, ')'),
             su.suidLogLocation
         FROM results_suid su
         JOIN scan_results sr ON sr.scanID = su.scanID
+        WHERE sr.scanUser = ?
 
         UNION ALL
 
-        SELECT
-            sr.scanDateTime,
-            'EnvCheck',
+        SELECT sr.scanDateTime, 'EnvCheck',
             CONCAT(ev.envVarName, ' matched pattern: ', ev.envVarPattern, ' value: ', ev.envVarValueMasked),
             ev.envCheckLogLocation
         FROM results_envcheck ev
         JOIN scan_results sr ON sr.scanID = ev.scanID
+        WHERE sr.scanUser = ?
 
         ORDER BY warningTime DESC
         LIMIT 200
     `;
 
-    db.query(sql, (err, rows) => {
+    db.query(sql, [req.uid, req.uid, req.uid, req.uid], (err, rows) => {
         if (err) {
             console.error('Error fetching warnings table:', err);
             return res.status(500).json({ success: false, error: 'Error fetching warnings data' });
