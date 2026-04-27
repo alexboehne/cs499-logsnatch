@@ -10,6 +10,10 @@
 
 `mysql -u root -p < db_struct/user_credDB.sql`
 
+`sudo bash setup.sh`
+
+`sudo bash logsnatch-init-scans.sh`
+
 ### For this part, keep 3 terminal windows open
 #### First window:
 
