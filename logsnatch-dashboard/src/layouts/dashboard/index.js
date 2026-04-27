@@ -34,23 +34,21 @@ const EMPTY_PIE = {
 
 const SCAN_TYPES = [
   { name: "rootkit", label: "Rootkit Scan", color: "error" },
-  { name: "ssh",     label: "SSH Scan",     color: "warning" },
-  { name: "suid",    label: "SUID Scan",    color: "info" },
-  { name: "envcheck",label: "Env Check",    color: "success" },
+  { name: "ssh", label: "SSH Scan", color: "warning" },
+  { name: "suid", label: "SUID Scan", color: "info" },
+  { name: "envcheck", label: "Env Check", color: "success" },
 ];
 
 function Dashboard() {
-  const [barChartData, setBarChartData]   = useState(EMPTY_BAR);
-  const [pieChartData, setPieChartData]   = useState(EMPTY_PIE);
-  const [chartLoading, setChartLoading]   = useState(true);
-  const [chartError, setChartError]       = useState(null);
+  const [barChartData, setBarChartData] = useState(EMPTY_BAR);
+  const [pieChartData, setPieChartData] = useState(EMPTY_PIE);
+  const [chartLoading, setChartLoading] = useState(true);
+  const [chartError, setChartError] = useState(null);
 
-  // Per-scan button state: { [scanName]: "idle" | "running" }
   const [scanStates, setScanStates] = useState(
     Object.fromEntries(SCAN_TYPES.map((s) => [s.name, "idle"]))
   );
 
-  // Snackbar feedback
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
 
   const fetchCharts = useCallback(() => {
@@ -63,7 +61,33 @@ function Dashboard() {
       .then((data) => {
         if (data.success) {
           setBarChartData(data.barChart);
-          setPieChartData(data.pieChart);
+
+          const pie = data.pieChart;
+          const filtered = pie.labels.reduce(
+            (acc, label, i) => {
+              if (pie.datasets.data[i] > 0) {
+                acc.labels.push(label);
+                acc.data.push(pie.datasets.data[i]);
+                acc.colors.push(pie.datasets.backgroundColors[i]);
+              }
+              return acc;
+            },
+            { labels: [], data: [], colors: [] }
+          );
+
+          if (filtered.labels.length === 0) {
+            setPieChartData(EMPTY_PIE);
+          } else {
+            setPieChartData({
+              labels: filtered.labels,
+              datasets: {
+                label: "Violations by Scan Type",
+                backgroundColors: filtered.colors,
+                data: filtered.data,
+              },
+            });
+          }
+
           setChartError(null);
         } else {
           setChartError("Failed to load chart data.");
@@ -78,11 +102,15 @@ function Dashboard() {
   }, [fetchCharts]);
 
   const handleScan = (scanName) => {
-    const token  = localStorage.getItem("authToken");
+    const token = localStorage.getItem("authToken");
     const userId = localStorage.getItem("authUid");
 
     if (!userId) {
-      setSnackbar({ open: true, message: "User ID not found — please log out and log in again.", severity: "error" });
+      setSnackbar({
+        open: true,
+        message: "User ID not found — please log out and log in again.",
+        severity: "error",
+      });
       return;
     }
 
@@ -99,10 +127,18 @@ function Dashboard() {
       .then((r) => r.json())
       .then((data) => {
         if (data.success) {
-          setSnackbar({ open: true, message: `${scanName.toUpperCase()} scan completed successfully.`, severity: "success" });
-          fetchCharts(); // refresh charts after scan
+          setSnackbar({
+            open: true,
+            message: `${scanName.toUpperCase()} scan completed successfully.`,
+            severity: "success",
+          });
+          fetchCharts();
         } else {
-          setSnackbar({ open: true, message: `Scan failed: ${data.error || "Unknown error"}`, severity: "error" });
+          setSnackbar({
+            open: true,
+            message: `Scan failed: ${data.error || "Unknown error"}`,
+            severity: "error",
+          });
         }
       })
       .catch(() =>
@@ -117,11 +153,11 @@ function Dashboard() {
     <DashboardLayout>
       <DashboardNavbar />
       <MDBox py={3}>
-
-        {/* ── Charts ── */}
         {chartError && (
           <MDBox mb={2}>
-            <MDTypography variant="caption" color="error">{chartError}</MDTypography>
+            <MDTypography variant="caption" color="error">
+              {chartError}
+            </MDTypography>
           </MDBox>
         )}
 
@@ -156,7 +192,6 @@ function Dashboard() {
           </Grid>
         )}
 
-        {/* ── Scan Buttons ── */}
         <Card>
           <MDBox p={3}>
             <MDTypography variant="h6" mb={2}>
@@ -188,14 +223,13 @@ function Dashboard() {
               })}
             </Grid>
             <MDTypography variant="caption" color="text" mt={1} display="block">
-              Scans may take up to 15 seconds to complete. All other buttons are disabled while a scan is running.
+              Scans may take up to 15 seconds to complete. All other buttons are disabled while a
+              scan is running.
             </MDTypography>
           </MDBox>
         </Card>
-
       </MDBox>
 
-      {/* ── Feedback Snackbar ── */}
       <Snackbar
         open={snackbar.open}
         autoHideDuration={6000}
