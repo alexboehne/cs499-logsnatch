@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS `user_sessions` (
 -- FK references the logged in user by their uid
 CREATE TABLE IF NOT EXISTS `scan_results` (
   `scanID` int NOT NULL AUTO_INCREMENT,
-  `scanDateTIme` datetime NOT NULL,
+  `scanDateTime` datetime NOT NULL,
   `scanPass` tinyint NOT NULL,
   `scanRtkitID` int DEFAULT NULL,
   `scanUser` int NOT NULL,

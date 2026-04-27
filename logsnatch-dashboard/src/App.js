@@ -1,17 +1,17 @@
 /**
-=========================================================
-* Material Dashboard 2 React - v2.2.0
-=========================================================
+ =========================================================
+ * Material Dashboard 2 React - v2.2.0
+ =========================================================
 
-* Product Page: https://www.creative-tim.com/product/material-dashboard-react
-* Copyright 2023 Creative Tim (https://www.creative-tim.com)
+ * Product Page: https://www.creative-tim.com/product/material-dashboard-react
+ * Copyright 2023 Creative Tim (https://www.creative-tim.com)
 
-Coded by www.creative-tim.com
+ Coded by www.creative-tim.com
 
  =========================================================
 
-* The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-*/
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+ */
 
 import { useState, useEffect, useMemo } from "react";
 
@@ -67,7 +67,7 @@ export default function App() {
   } = controller;
   const [onMouseEnter, setOnMouseEnter] = useState(false);
   const [rtlCache, setRtlCache] = useState(null);
-  const [authChecked, setAuthChecked] = useState(false); // prevents flash of dashboard before redirect
+  const [authChecked, setAuthChecked] = useState(false);
   const { pathname } = useLocation();
 
   // Cache for the rtl
@@ -111,7 +111,8 @@ export default function App() {
   }, [pathname]);
 
   // Token validation: pick up token from URL on first load, then verify it
-  // server-side. Expired or missing tokens redirect back to the login app.
+  // server-side via /api/me which also returns the uid.
+  // Expired or missing tokens redirect back to the login app.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlToken = params.get("token");
@@ -123,7 +124,6 @@ export default function App() {
       return;
     }
 
-    // Persist whichever token we resolved
     localStorage.setItem("authToken", token);
 
     // Remove the token from the URL bar without triggering a reload
@@ -132,8 +132,8 @@ export default function App() {
       window.history.replaceState({}, document.title, cleanUrl);
     }
 
-    // Verify the token is still valid on the backend
-    fetch("http://localhost:5000/api/validate-token", {
+    // Verify the token and fetch the uid in a single request
+    fetch("http://localhost:5000/api/me", {
       method: "GET",
       headers: {
         Authorization: "Bearer " + token,
@@ -143,13 +143,16 @@ export default function App() {
       .then((data) => {
         if (!data.success) {
           localStorage.removeItem("authToken");
+          localStorage.removeItem("authUid");
           window.location.href = "http://localhost:3000";
         } else {
-          setAuthChecked(true); // token is valid — allow render
+          localStorage.setItem("authUid", data.uid);
+          setAuthChecked(true);
         }
       })
       .catch(() => {
         localStorage.removeItem("authToken");
+        localStorage.removeItem("authUid");
         window.location.href = "http://localhost:3000";
       });
   }, []);

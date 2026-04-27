@@ -17,10 +17,8 @@ const Home = (props) => {
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
-          console.log('Logged in User ID:', data.user.uid)
-          alert(`Welcome back, ${data.user.username}!`)
           localStorage.setItem('authToken', data.token)
-          // Pass token in URL for the dashboard to pick up on first load
+          localStorage.setItem('authUid', data.user.uid)
           window.location.href = 'http://localhost:3001/dashboard?token=' + data.token
         } else {
           alert(data.message)
@@ -40,8 +38,7 @@ const Home = (props) => {
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
-          console.log('New User ID:', data.user)
-          alert(`Created user \"${data.username}\"`)
+          alert(`Created user "${data.username}"`)
         } else {
           alert(data.message)
         }
